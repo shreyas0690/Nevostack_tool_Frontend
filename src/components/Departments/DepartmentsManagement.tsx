@@ -251,10 +251,14 @@ export default function DepartmentsManagement() {
         {filteredDepartments.map((department) => {
           const head = getDepartmentHead(department.headId);
           const members = getDepartmentMembers(department.id);
-          const managers = getDepartmentManagers(department.id);
           
             return (
-              <Card key={department.id} className="relative hover:shadow-lg transition-all duration-300 border-0 shadow-md bg-gradient-to-br from-background to-muted/30 rounded-xl overflow-hidden">
+              <Card key={department.id} className="relative hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 border-0 shadow-md bg-gradient-to-br from-background to-muted/30 rounded-xl overflow-hidden">
+                {/* Top color bar */}
+                <div
+                  className="absolute inset-x-0 top-0 h-1.5"
+                  style={{ backgroundColor: department.color }}
+                />
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -264,6 +268,7 @@ export default function DepartmentsManagement() {
                       />
                       <div>
                         <CardTitle className="text-lg font-semibold tracking-tight">{department.name}</CardTitle>
+                        <p className="text-xs text-muted-foreground mt-0.5">Since {department.createdAt.toLocaleDateString()}</p>
                       </div>
                     </div>
                   <DropdownMenu>
@@ -314,7 +319,7 @@ export default function DepartmentsManagement() {
                   )}
                 </div>
 
-                {/* Member Count */}
+                {/* Total Members */}
                 <div className="flex items-center justify-between py-3 px-4 bg-muted/20 rounded-lg border border-border/30">
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-muted-foreground" />
@@ -325,56 +330,9 @@ export default function DepartmentsManagement() {
                   </Badge>
                 </div>
 
-                {/* Department Statistics */}
-                <div className="grid grid-cols-3 gap-3 text-center py-4 px-2 bg-gradient-to-r from-muted/20 to-muted/30 rounded-lg border border-border/50">
-                  <div className="p-2 rounded-md bg-background/50">
-                    <p className="text-xl font-bold text-yellow-600">{head ? 1 : 0}</p>
-                    <p className="text-xs font-medium text-muted-foreground">Head</p>
-                  </div>
-                  <div className="p-2 rounded-md bg-background/50">
-                    <p className="text-xl font-bold text-blue-600">{managers.length}</p>
-                    <p className="text-xs font-medium text-muted-foreground">Managers</p>
-                  </div>
-                  <div className="p-2 rounded-md bg-background/50">
-                    <p className="text-xl font-bold text-gray-600">{members.length - managers.length - (head ? 1 : 0)}</p>
-                    <p className="text-xs font-medium text-muted-foreground">Members</p>
-                  </div>
-                </div>
+                {/* Team preview avatars removed as requested */}
 
-                {/* Recent Members */}
-                {members.length > 0 && (
-                  <div className="space-y-3 bg-muted/20 rounded-lg p-4 border border-border/30">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key People</p>
-                    <div className="space-y-2">
-                      {head && (
-                        <div className="flex items-center gap-3 p-2 bg-background/60 rounded-md border border-border/40">
-                          <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center shadow-sm">
-                            <span className="text-xs font-semibold text-yellow-700">
-                              {head.name.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <span className="text-sm font-medium flex-1">{head.name}</span>
-                          <Badge variant="default" className="text-xs font-medium">
-                            Head
-                          </Badge>
-                        </div>
-                      )}
-                      {managers.slice(0, 2).map((manager) => (
-                        <div key={manager.id} className="flex items-center gap-3 p-2 bg-background/60 rounded-md border border-border/40">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shadow-sm">
-                            <span className="text-xs font-semibold text-blue-700">
-                              {manager.name.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <span className="text-sm font-medium flex-1">{manager.name}</span>
-                          <Badge variant="secondary" className="text-xs font-medium">
-                            Manager
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Key People section removed as requested */}
 
                 <div className="grid grid-cols-1 gap-3 pt-2">
                   <Button 
@@ -392,7 +350,7 @@ export default function DepartmentsManagement() {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="flex-1 font-medium border-border/60 hover:border-border transition-all duration-200"
+                      className="flex-1 font-medium border-border/60 hover:border-border hover:ring-1 hover:ring-border transition-all duration-200"
                       onClick={() => {
                         setSelectedDepartment(department);
                         setShowHierarchyDialog(true);
@@ -403,7 +361,7 @@ export default function DepartmentsManagement() {
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="flex-1 font-medium border-border/60 hover:border-border transition-all duration-200"
+                      className="flex-1 font-medium border-border/60 hover:border-border hover:ring-1 hover:ring-border transition-all duration-200"
                       onClick={() => {
                         setSelectedDepartment(department);
                         setShowMembersDialog(true);
