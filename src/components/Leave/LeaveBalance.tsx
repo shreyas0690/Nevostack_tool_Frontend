@@ -14,7 +14,6 @@ export default function LeaveBalance() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Calendar className="h-5 w-5" />
-          Leave Balance Overview
         </CardTitle>
       </CardHeader>
       <CardContent>

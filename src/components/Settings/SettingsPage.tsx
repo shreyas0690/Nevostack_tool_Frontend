@@ -1,1226 +1,1009 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  Settings, User, Building2, Bell, Shield, Palette, Database,
-  Lock, Eye, EyeOff, Upload, Download, Trash2, RefreshCw,
-  Globe, Mail, Phone, MapPin, Camera, Save, AlertTriangle,
-  Key, Smartphone, Wifi, Monitor, Moon, Sun, Volume2,
-  Calendar, Clock, Languages, CreditCard, Zap, Cloud,
-  FileText, Archive, Filter, Search, BarChart3, Sliders
+  Settings, User, Save, Camera, 
+  Mail, Phone, CheckCircle2, Loader2, Shield, Lock,
+  Building2, Globe, Users, Clock, Languages, Home
 } from 'lucide-react';
-import PushNotificationSettings from '@/components/Notifications/PushNotificationSettings';
 import { toast } from '@/hooks/use-toast';
+import { authService } from '@/services/authService';
+import { useAuth } from '@/components/Auth/AuthProvider';
+import { workspaceService, type Workspace } from '@/services/workspaceService';
+import { companyService, type Company, type UpdateCompanyData } from '@/services/companyService';
+import { userService, type User as UserType, type UpdateUserData } from '@/services/userService';
+import { testCompanyAPI } from '@/utils/testCompanyAPI';
+import FeatureAccessStatus from '@/components/FeatureAccess/FeatureAccessStatus';
+import FeatureDebugPanel from '@/components/FeatureAccess/FeatureDebugPanel';
+import FeatureTestPanel from '@/components/FeatureAccess/FeatureTestPanel';
+import SimpleFeatureTest from '@/components/FeatureAccess/SimpleFeatureTest';
+import ApiTest from '@/components/FeatureAccess/ApiTest';
 
 export default function SettingsPage() {
+  const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [activeProfileTab, setActiveProfileTab] = useState('personal');
   
-  // Settings state
-  const [settings, setSettings] = useState({
-    // Profile Settings
-    profile: {
-      firstName: 'John',
-      lastName: 'Doe',
-      email: 'john.doe@company.com',
-      phone: '+1 (555) 123-4567',
-      location: 'New York, USA',
-      bio: 'Senior Software Engineer with 5+ years of experience.',
-      avatar: '',
-      timezone: 'America/New_York',
-      language: 'en',
-      dateFormat: 'MM/dd/yyyy',
-      timeFormat: '12h'
+  // Get current user and update function from auth context
+  const { currentUser, updateCurrentUser } = useAuth();
+  
+  // Debug: Log current user data
+  console.log('Current User:', currentUser);
+  console.log('Current User mobileNumber:', currentUser?.mobileNumber);
+  
+  // Test company API on load
+  useEffect(() => {
+    if (currentUser?.companyId) {
+      console.log('🧪 Testing Company API for debugging...');
+      testCompanyAPI(currentUser.companyId).then(result => {
+        console.log('🧪 Test API Result:', result);
+      });
+    }
+  }, [currentUser?.companyId]);
+  
+  // Profile state
+  const [profileForm, setProfileForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    mobileNumber: ''
+  });
+
+  // Avatar state (separate from profile form)
+  const [currentAvatar, setCurrentAvatar] = useState('');
+
+  // Company state
+  const [companyForm, setCompanyForm] = useState({
+    name: '',
+    domain: '',
+    email: '',
+    phone: '',
+    address: {
+      street: '',
+      city: '',
+      state: '',
+      country: '',
+      zipCode: ''
     },
-    
-    // Company Settings
-    company: {
-      name: 'Tech Solutions Inc.',
-      domain: 'techsolutions.com',
-      address: '123 Business St, NY 10001',
-      industry: 'technology',
-      size: '50-200',
-      workingHours: '9:00 AM - 6:00 PM',
-      workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-      holidayCalendar: 'us',
-      fiscalYearStart: 'january'
-    },
-    
-    // Security Settings
-    security: {
-      twoFactorEnabled: true,
-      emailNotifications: true,
-      loginAlerts: true,
-      sessionTimeout: 30,
-      passwordExpiry: 90,
-      failedLoginAttempts: 5,
-      ipWhitelisting: false,
-      auditLogging: true
-    },
-    
-    // Notification Settings
-    notifications: {
-      email: {
-        taskAssigned: true,
-        taskCompleted: true,
-        taskOverdue: true,
-        leaveRequests: true,
-        departmentUpdates: true,
-        systemAlerts: true,
-        weeklyReports: false,
-        monthlyReports: true
-      },
-      push: {
-        taskReminders: true,
-        meetingAlerts: true,
-        deadlineAlerts: true,
-        teamUpdates: false
-      },
-      sms: {
-        criticalAlerts: true,
-        emergencyOnly: true
+    logo: '',
+    timezone: '',
+    language: '',
+    plan: '',
+    status: '',
+    maxUsers: 0,
+    currentUsers: 0
+  });
+  console.log(companyForm)
+
+
+  // Fetch user profile data
+  const { data: userProfile, isLoading: isProfileLoading } = useQuery({
+    queryKey: ['userProfile', currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser?.id) return null;
+      try {
+        const response = await userService.getUserById(currentUser.id);
+        // Backend returns { success: true, user: { ... } } or ApiResponse with data
+        return (response as any).user || response.data;
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+        return null; // Do not fallback to mock/currentUser
       }
     },
-    
-    // Appearance Settings
-    appearance: {
-      theme: 'system',
-      colorScheme: 'blue',
-      fontSize: 'medium',
-      density: 'comfortable',
-      sidebarCollapsed: false,
-      showAvatars: true,
-      showTimestamps: true,
-      animationsEnabled: true
+    enabled: !!currentUser?.id,
+    initialData: undefined
+  });
+
+  // Fetch company data
+  const { data: companyData, isLoading: isCompanyLoading } = useQuery({
+    queryKey: ['company', currentUser?.companyId],
+    queryFn: async () => {
+      if (!currentUser?.companyId) {
+        console.log('⚠️ No company ID found for user:', currentUser);
+        return null;
+      }
+      
+      console.log('🔍 Fetching company data for ID:', currentUser.companyId);
+      const response = await companyService.getCompanyById(currentUser.companyId);
+      return response.data;
     },
-    
-    // Data & Privacy
-    privacy: {
-      profileVisibility: 'team',
-      activityTracking: true,
-      analyticsOptIn: false,
-      dataRetention: 365,
-      exportEnabled: true,
-      deleteAfterInactive: 1095
+    enabled: !!currentUser?.companyId, // Only enabled when company ID exists
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    retry: 1 // Only retry once
+  });
+
+
+  // Update avatar when currentUser changes
+  useEffect(() => {
+    if (currentUser?.avatar) {
+      console.log('Setting avatar from currentUser:', currentUser.avatar);
+      setCurrentAvatar(currentUser.avatar);
+    }
+  }, [currentUser]);
+
+  // Update profile form when data loads
+  useEffect(() => {
+    console.log('User Profile Data:', userProfile);
+    console.log('Mobile Number from profile:', userProfile?.mobileNumber);
+    if (userProfile) {
+      const formData = {
+        firstName: userProfile.firstName || userProfile.name?.split(' ')[0] || '',
+        lastName: userProfile.lastName || userProfile.name?.split(' ').slice(1).join(' ') || '',
+        email: userProfile.email || '',
+        mobileNumber: userProfile.mobileNumber || ''
+      };
+      console.log('Setting Profile Form:', formData);
+      setProfileForm(formData);
+      // Update avatar from userProfile if available
+      if (userProfile.avatar) {
+        console.log('Setting avatar from userProfile:', userProfile.avatar);
+        setCurrentAvatar(userProfile.avatar);
+      }
+    }
+  }, [userProfile]);
+
+  // Update company form when data loads
+  useEffect(() => {
+    console.log('Company Data:', companyData);
+    console.log('Current User Company ID:', currentUser?.companyId);
+    if (companyData) {
+      const companyFormData = {
+        name: companyData.name || '',
+        domain: companyData.domain || '',
+        email: companyData.email || '',
+        phone: companyData.phone || '',
+        address: {
+          street: companyData.address?.street || '',
+          city: companyData.address?.city || '',
+          state: companyData.address?.state || '',
+          country: companyData.address?.country || '',
+          zipCode: companyData.address?.zipCode || ''
+        },
+        logo: companyData.logo || '',
+        plan: companyData.subscription?.plan || '',
+        status: companyData.status || '',
+        maxUsers: companyData.limits?.maxUsers || 0,
+        currentUsers: companyData.stats?.totalUsers || 0,
+        timezone: companyData.settings?.timezone || '',
+        language: companyData.settings?.language || ''
+      };
+      console.log('Setting Company Form:', companyFormData);
+      setCompanyForm(companyFormData);
+    }
+  }, [companyData, currentUser?.companyId]);
+
+
+  // Update profile mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: UpdateUserData) => {
+      if (!currentUser?.id) throw new Error('No user ID');
+      return await userService.updateUser(currentUser.id, data);
     },
-    
-    // Integration Settings
-    integrations: {
-      googleCalendar: false,
-      microsoftTeams: false,
-      slack: true,
-      zoom: false,
-      github: false,
-      jira: false,
-      webhooks: []
+    onSuccess: () => {
+      // Update auth context and localStorage with the new profile data
+      updateCurrentUser({
+        ...currentUser,
+        firstName: profileForm.firstName,
+        lastName: profileForm.lastName,
+        email: profileForm.email,
+        mobileNumber: profileForm.mobileNumber,
+        name: `${profileForm.firstName} ${profileForm.lastName}`.trim()
+      });
+
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been successfully updated.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update profile. Please try again.",
+        variant: "destructive",
+      });
     }
   });
 
-  const handleSave = async (section: string) => {
-    setIsLoading(true);
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+  // Update company mutation
+  const updateCompanyMutation = useMutation({
+    mutationFn: async (data: UpdateCompanyData) => {
+      if (!currentUser?.companyId) throw new Error('No company ID');
+      return await companyService.updateCompany(currentUser.companyId, data);
+    },
+    onSuccess: () => {
       toast({
-        title: "Settings Saved",
-        description: `${section} settings have been updated successfully.`,
+        title: "Company Updated",
+        description: "Company information has been successfully updated.",
       });
-    } catch (error) {
+      queryClient.invalidateQueries({ queryKey: ['company'] });
+    },
+    onError: (error: any) => {
       toast({
-        title: "Error",
-        description: "Failed to save settings. Please try again.",
+        title: "Update Failed",
+        description: error.message || "Failed to update company information. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
+    }
+  });
+
+
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    updateProfileMutation.mutate(profileForm);
+  };
+
+  const handleCompanySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Filter out empty address fields to avoid validation issues
+    const filteredAddress = Object.fromEntries(
+      Object.entries(companyForm.address).filter(([_, value]) => value && value.trim() !== '')
+    );
+
+    // Filter out empty settings fields to avoid validation issues
+    const filteredSettings = Object.fromEntries(
+      Object.entries({
+        timezone: companyForm.timezone,
+        language: companyForm.language
+      }).filter(([_, value]) => value && value.trim() !== '')
+    );
+
+    const updateData: UpdateCompanyData = {
+      name: companyForm.name,
+      domain: companyForm.domain,
+      email: companyForm.email,
+      phone: companyForm.phone,
+      ...(Object.keys(filteredAddress).length > 0 && { address: filteredAddress }),
+      ...(Object.keys(filteredSettings).length > 0 && { settings: filteredSettings })
+    };
+    console.log('Company update data being sent:', updateData);
+    updateCompanyMutation.mutate(updateData);
+  };
+
+
+  // Handle avatar file selection and upload
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile && currentUser?.id) {
+      try {
+        setIsLoading(true);
+
+        // Upload file directly to backend using FormData
+        const response = await userService.uploadAvatar(currentUser.id, selectedFile);
+
+        if (response.success && response.data?.avatar) {
+          const newAvatarUrl = response.data.avatar;
+          console.log('Avatar upload successful, new URL:', newAvatarUrl);
+
+          // Update local avatar state immediately
+          setCurrentAvatar(newAvatarUrl);
+
+          // Update auth context and localStorage so avatar shows everywhere
+          updateCurrentUser({
+            ...currentUser,
+            avatar: newAvatarUrl,
+            name: currentUser?.name || `${profileForm.firstName} ${profileForm.lastName}`.trim()
+          });
+
+        // Update the query cache to reflect the new avatar
+          queryClient.setQueryData(['userProfile', currentUser.id], (oldData: any) => {
+            if (oldData) {
+              return { ...oldData, avatar: newAvatarUrl };
+            }
+            return oldData;
+          });
+
+          // Invalidate queries to refresh profile data
+        queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+
+        toast({
+          title: "Avatar Updated",
+          description: "Your avatar has been successfully updated.",
+        });
+        } else {
+          throw new Error('Upload failed - no avatar URL returned');
+        }
+
+      } catch (error: any) {
+        console.error('Avatar upload error:', error);
+        toast({
+          title: "Upload Failed",
+          description: error.message || "Failed to upload avatar. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+        // Clear the file input
+        e.target.value = '';
+      }
     }
   };
 
-  const handleReset = (section: string) => {
-    toast({
-      title: "Settings Reset",
-      description: `${section} settings have been reset to defaults.`,
-    });
-  };
-
-  const handleExportData = async () => {
-    setIsLoading(true);
-    try {
-      const data = {
-        settings,
-        exportedAt: new Date().toISOString(),
-        version: '1.0'
-      };
-      
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `settings-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      toast({
-        title: "Data Exported",
-        description: "Your settings have been exported successfully.",
-      });
-    } catch (error) {
-      toast({
-        title: "Export Failed",
-        description: "Failed to export data. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+  const getStatusBadgeColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'active': return 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800';
+      case 'trial': return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800';
+      case 'suspended': return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800';
+      default: return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
     }
   };
+
+  const getPlanBadgeColor = (plan: string) => {
+    switch (plan?.toLowerCase()) {
+      case 'starter': return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+      case 'professional': return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800';
+      case 'enterprise': return 'bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 border-purple-200 dark:from-purple-900/20 dark:to-indigo-900/20 dark:text-purple-300 dark:border-purple-700';
+      default: return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
+    }
+  };
+
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Advanced Settings</h1>
-          <p className="text-muted-foreground">Manage your account, company, and system preferences</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportData} disabled={isLoading}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Data
-          </Button>
-          <Button onClick={() => handleSave('All')} disabled={isLoading}>
-            <Save className="h-4 w-4 mr-2" />
-            Save All Changes
-          </Button>
-        </div>
-      </div>
-
-      <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-7">
-          <TabsTrigger value="profile" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Profile
-          </TabsTrigger>
-          <TabsTrigger value="company" className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" />
-            Company
-          </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Security
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Notifications
-          </TabsTrigger>
-          <TabsTrigger value="appearance" className="flex items-center gap-2">
-            <Palette className="h-4 w-4" />
-            Appearance
-          </TabsTrigger>
-          <TabsTrigger value="privacy" className="flex items-center gap-2">
-            <Lock className="h-4 w-4" />
-            Privacy
-          </TabsTrigger>
-          <TabsTrigger value="integrations" className="flex items-center gap-2">
-            <Zap className="h-4 w-4" />
-            Integrations
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Profile Settings */}
-        <TabsContent value="profile" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5" />
-                    Personal Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="firstName">First Name</Label>
-                      <Input
-                        id="firstName"
-                        value={settings.profile.firstName}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          profile: { ...prev.profile, firstName: e.target.value }
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="lastName">Last Name</Label>
-                      <Input
-                        id="lastName"
-                        value={settings.profile.lastName}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          profile: { ...prev.profile, lastName: e.target.value }
-                        }))}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={settings.profile.email}
-                      onChange={(e) => setSettings(prev => ({
-                        ...prev,
-                        profile: { ...prev.profile, email: e.target.value }
-                      }))}
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="phone">Phone Number</Label>
-                      <Input
-                        id="phone"
-                        value={settings.profile.phone}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          profile: { ...prev.profile, phone: e.target.value }
-                        }))}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="location">Location</Label>
-                      <Input
-                        id="location"
-                        value={settings.profile.location}
-                        onChange={(e) => setSettings(prev => ({
-                          ...prev,
-                          profile: { ...prev.profile, location: e.target.value }
-                        }))}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="bio">Bio</Label>
-                    <Textarea
-                      id="bio"
-                      value={settings.profile.bio}
-                      onChange={(e) => setSettings(prev => ({
-                        ...prev,
-                        profile: { ...prev.profile, bio: e.target.value }
-                      }))}
-                      rows={3}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Globe className="h-5 w-5" />
-                    Localization
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="timezone">Timezone</Label>
-                      <Select value={settings.profile.timezone}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="America/New_York">Eastern Time (UTC-5)</SelectItem>
-                          <SelectItem value="America/Chicago">Central Time (UTC-6)</SelectItem>
-                          <SelectItem value="America/Denver">Mountain Time (UTC-7)</SelectItem>
-                          <SelectItem value="America/Los_Angeles">Pacific Time (UTC-8)</SelectItem>
-                          <SelectItem value="Europe/London">GMT (UTC+0)</SelectItem>
-                          <SelectItem value="Europe/Paris">CET (UTC+1)</SelectItem>
-                          <SelectItem value="Asia/Tokyo">JST (UTC+9)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="language">Language</Label>
-                      <Select value={settings.profile.language}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="en">English</SelectItem>
-                          <SelectItem value="es">Spanish</SelectItem>
-                          <SelectItem value="fr">French</SelectItem>
-                          <SelectItem value="de">German</SelectItem>
-                          <SelectItem value="ja">Japanese</SelectItem>
-                          <SelectItem value="zh">Chinese</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="dateFormat">Date Format</Label>
-                      <Select value={settings.profile.dateFormat}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="MM/dd/yyyy">MM/DD/YYYY</SelectItem>
-                          <SelectItem value="dd/MM/yyyy">DD/MM/YYYY</SelectItem>
-                          <SelectItem value="yyyy-MM-dd">YYYY-MM-DD</SelectItem>
-                          <SelectItem value="MMM dd, yyyy">MMM DD, YYYY</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="timeFormat">Time Format</Label>
-                      <Select value={settings.profile.timeFormat}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="12h">12 Hour (AM/PM)</SelectItem>
-                          <SelectItem value="24h">24 Hour</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl">
+        {/* Analytics-style Header */}
+        <div className="relative mb-4 sm:mb-6 lg:mb-8">
+          <div className="absolute inset-0 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10 dark:to-transparent rounded-xl"></div>
+          <div className="relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl border border-slate-200/50 dark:border-slate-700/50 p-3 sm:p-4 lg:p-6">
+          <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-r from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
+                  <Settings className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-white" />
+              </div>
+              <div>
+                  <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                    <span className="hidden sm:inline">Settings</span>
+                    <span className="sm:hidden">Settings</span>
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                    <span className="hidden sm:inline">Manage your profile and company preferences</span>
+                    <span className="sm:hidden">Manage profile and preferences</span>
+                  </p>
+              </div>
             </div>
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs sm:text-sm px-2 sm:px-3 py-1">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                <span className="hidden sm:inline">All Systems Operational</span>
+                <span className="sm:hidden">Operational</span>
+              </Badge>
+            </div>
+            </div>
+          </div>
+        </div>
 
-            <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Camera className="h-5 w-5" />
-                    Profile Picture
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col items-center space-y-4">
-                    <Avatar className="h-24 w-24">
-                      <AvatarImage src={settings.profile.avatar} />
-                      <AvatarFallback className="text-lg">
-                        {settings.profile.firstName.charAt(0)}{settings.profile.lastName.charAt(0)}
+        {/* Settings Sections */}
+        <div className="space-y-4 sm:space-y-6 lg:space-y-8">
+
+          {/* Profile Section with Tabs */}
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                <User className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  <span className="hidden sm:inline">Profile Settings</span>
+                  <span className="sm:hidden">Profile</span>
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                  <span className="hidden sm:inline">Manage your personal information and preferences</span>
+                  <span className="sm:hidden">Manage personal information</span>
+                </p>
+          </div>
+        </div>
+
+            <Tabs value={activeProfileTab} onValueChange={setActiveProfileTab} className="space-y-4 sm:space-y-6">
+              <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <TabsTrigger 
+                  value="personal" 
+                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:text-red-600 dark:data-[state=active]:text-red-400 text-xs sm:text-sm px-2 sm:px-4 py-2"
+              >
+                  <span className="hidden sm:inline">Personal Information</span>
+                  <span className="sm:hidden">Personal</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                  value="account" 
+                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:text-red-600 dark:data-[state=active]:text-red-400 text-xs sm:text-sm px-2 sm:px-4 py-2"
+              >
+                  <span className="hidden sm:inline">Account Settings</span>
+                  <span className="sm:hidden">Account</span>
+              </TabsTrigger>
+            </TabsList>
+
+              <TabsContent value="personal" className="space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+              {/* Profile Picture Card */}
+                  <Card className="lg:col-span-1 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+                <CardHeader className="text-center pb-3 sm:pb-4 p-3 sm:p-4 lg:p-6">
+                  <div className="relative mx-auto">
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 lg:w-32 lg:h-32 mx-auto relative">
+                          <Avatar className="w-full h-full border-4 border-white shadow-lg">
+                      <AvatarImage
+                        src={currentAvatar}
+                        alt={`${profileForm.firstName} ${profileForm.lastName}`}
+                      />
+                            <AvatarFallback className="text-lg sm:text-xl lg:text-2xl font-bold bg-gradient-to-r from-red-500 to-red-600 text-white">
+                        {(profileForm.firstName[0] || 'U')}{(profileForm.lastName[0] || '')}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex flex-col space-y-2">
-                      <Button size="sm" variant="outline">
-                        <Upload className="h-4 w-4 mr-2" />
-                        Upload Photo
-                      </Button>
-                      <Button size="sm" variant="ghost">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Remove Photo
-                      </Button>
+                          <div className="absolute -bottom-1 -right-1">
+                      <label htmlFor="avatar-upload" className="cursor-pointer">
+                              <div className={`w-8 h-8 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-full flex items-center justify-center shadow-lg transition-colors ${
+                                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'
+                              }`}>
+                          {isLoading ? (
+                            <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 text-white animate-spin" />
+                          ) : (
+                            <Camera className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+                          )}
+                        </div>
+                      </label>
+                      <input
+                        id="avatar-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarChange}
+                        disabled={isLoading}
+                        className="hidden"
+                      />
+                          </div>
                     </div>
                   </div>
-                  <p className="text-sm text-muted-foreground text-center">
-                    Recommended: Square image, at least 400x400px
-                  </p>
-                </CardContent>
+                  <div className="mt-3 sm:mt-4">
+                        <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
+                      {profileForm.firstName} {profileForm.lastName}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">{profileForm.email}</p>
+                        <Badge className="mt-2 bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 text-xs sm:text-sm px-2 py-1">
+                      {currentUser?.role || 'User'}
+                    </Badge>
+                  </div>
+                </CardHeader>
               </Card>
 
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
+                  {/* Personal Information Form */}
+                  <Card className="lg:col-span-2 border-slate-200 dark:border-slate-700 shadow-sm">
+                    <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
+                      <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                        <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                          <User className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+                        </div>
+                        <span className="text-sm sm:text-base lg:text-lg">
+                          <span className="hidden sm:inline">Personal Information</span>
+                          <span className="sm:hidden">Personal Info</span>
+                        </span>
+                  </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <Key className="h-4 w-4 mr-2" />
-                    Change Password
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export Profile Data
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Reset to Defaults
-                  </Button>
+                    <CardContent className="p-3 sm:p-4 lg:p-6">
+                  {isProfileLoading ? (
+                    <div className="flex items-center justify-center py-8 sm:py-12">
+                          <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-red-600" />
+                          <span className="ml-2 sm:ml-3 text-sm sm:text-lg text-slate-900 dark:text-slate-100">Loading profile...</span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleProfileSubmit} className="space-y-4 sm:space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                        <div>
+                              <Label htmlFor="firstName" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            First Name
+                          </Label>
+                          <Input
+                            id="firstName"
+                            value={profileForm.firstName}
+                            onChange={(e) => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
+                                className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            required
+                          />
+                        </div>
+                        <div>
+                              <Label htmlFor="lastName" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Last Name
+                          </Label>
+                          <Input
+                            id="lastName"
+                            value={profileForm.lastName}
+                            onChange={(e) => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
+                                className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                            <Label htmlFor="email" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                          Email Address
+                        </Label>
+                        <div className="relative mt-1 sm:mt-2">
+                          <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                          <Input
+                            id="email"
+                            type="email"
+                            value={profileForm.email}
+                            onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
+                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                            <Label htmlFor="mobileNumber" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                          Mobile Number
+                        </Label>
+                        <div className="relative mt-1 sm:mt-2">
+                          <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                          <Input
+                            id="mobileNumber"
+                            value={profileForm.mobileNumber || ''}
+                            onChange={(e) => setProfileForm(prev => ({ ...prev, mobileNumber: e.target.value }))}
+                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            placeholder="+1 (555) 987-6543"
+                          />
+                        </div>
+                      </div>
+
+                      <Separator className="my-4 sm:my-6" />
+
+                      <div className="flex justify-end gap-2 sm:gap-3">
+                        <Button 
+                          type="submit" 
+                          disabled={updateProfileMutation.isPending}
+                              className="bg-red-600 hover:bg-red-700 text-white h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
+                        >
+                          {updateProfileMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">Saving...</span>
+                              <span className="sm:hidden">Saving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">Save Profile</span>
+                              <span className="sm:hidden">Save</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
                 </CardContent>
               </Card>
             </div>
-          </div>
+          </TabsContent>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Profile')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Profile')} disabled={isLoading}>
-              Save Profile Settings
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Security Settings */}
-        <TabsContent value="security" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Authentication
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Two-Factor Authentication</Label>
-                    <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
-                  </div>
-                  <Switch
-                    checked={settings.security.twoFactorEnabled}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      security: { ...prev.security, twoFactorEnabled: checked }
-                    }))}
-                  />
-                </div>
-                
-                <Separator />
-                
-                <div>
-                  <Label htmlFor="sessionTimeout">Session Timeout (minutes)</Label>
-                  <Select value={settings.security.sessionTimeout.toString()}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="15">15 minutes</SelectItem>
-                      <SelectItem value="30">30 minutes</SelectItem>
-                      <SelectItem value="60">1 hour</SelectItem>
-                      <SelectItem value="120">2 hours</SelectItem>
-                      <SelectItem value="480">8 hours</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="passwordExpiry">Password Expiry (days)</Label>
-                  <Select value={settings.security.passwordExpiry.toString()}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="30">30 days</SelectItem>
-                      <SelectItem value="60">60 days</SelectItem>
-                      <SelectItem value="90">90 days</SelectItem>
-                      <SelectItem value="180">180 days</SelectItem>
-                      <SelectItem value="365">1 year</SelectItem>
-                      <SelectItem value="-1">Never</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-5 w-5" />
-                  Monitoring & Alerts
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Login Alerts</Label>
-                    <p className="text-sm text-muted-foreground">Get notified of new logins</p>
-                  </div>
-                  <Switch
-                    checked={settings.security.loginAlerts}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      security: { ...prev.security, loginAlerts: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Audit Logging</Label>
-                    <p className="text-sm text-muted-foreground">Track all account activity</p>
-                  </div>
-                  <Switch
-                    checked={settings.security.auditLogging}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      security: { ...prev.security, auditLogging: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>IP Whitelisting</Label>
-                    <p className="text-sm text-muted-foreground">Restrict access by IP address</p>
-                  </div>
-                  <Switch
-                    checked={settings.security.ipWhitelisting}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      security: { ...prev.security, ipWhitelisting: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="failedAttempts">Failed Login Attempts</Label>
-                  <Select value={settings.security.failedLoginAttempts.toString()}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="3">3 attempts</SelectItem>
-                      <SelectItem value="5">5 attempts</SelectItem>
-                      <SelectItem value="10">10 attempts</SelectItem>
-                      <SelectItem value="-1">Unlimited</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Security settings affect all users in your organization. Changes may require users to re-authenticate.
-            </AlertDescription>
-          </Alert>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Security')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Security')} disabled={isLoading}>
-              Save Security Settings
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Appearance Settings */}
-        <TabsContent value="appearance" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Palette className="h-5 w-5" />
-                  Theme & Colors
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>Theme Mode</Label>
-                  <div className="grid grid-cols-3 gap-2 mt-2">
-                    {[
-                      { value: 'light', label: 'Light', icon: Sun },
-                      { value: 'dark', label: 'Dark', icon: Moon },
-                      { value: 'system', label: 'System', icon: Monitor }
-                    ].map((theme) => {
-                      const Icon = theme.icon;
-                      return (
-                        <Button
-                          key={theme.value}
-                          variant={settings.appearance.theme === theme.value ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setSettings(prev => ({
-                            ...prev,
-                            appearance: { ...prev.appearance, theme: theme.value }
-                          }))}
-                          className="flex flex-col gap-1 h-auto py-3"
-                        >
-                          <Icon className="h-4 w-4" />
-                          {theme.label}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-                
-                <div>
-                  <Label>Color Scheme</Label>
-                  <div className="grid grid-cols-4 gap-2 mt-2">
-                    {['blue', 'green', 'purple', 'orange'].map((color) => (
-                      <Button
-                        key={color}
-                        variant={settings.appearance.colorScheme === color ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setSettings(prev => ({
-                          ...prev,
-                          appearance: { ...prev.appearance, colorScheme: color }
-                        }))}
-                        className="capitalize"
-                      >
-                        {color}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                
-                <div>
-                  <Label>Font Size</Label>
-                  <Select value={settings.appearance.fontSize}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="small">Small</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="large">Large</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label>Density</Label>
-                  <Select value={settings.appearance.density}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="compact">Compact</SelectItem>
-                      <SelectItem value="comfortable">Comfortable</SelectItem>
-                      <SelectItem value="spacious">Spacious</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sliders className="h-5 w-5" />
-                  Interface Options
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Show Avatars</Label>
-                    <p className="text-sm text-muted-foreground">Display user profile pictures</p>
-                  </div>
-                  <Switch
-                    checked={settings.appearance.showAvatars}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      appearance: { ...prev.appearance, showAvatars: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Show Timestamps</Label>
-                    <p className="text-sm text-muted-foreground">Display creation and update times</p>
-                  </div>
-                  <Switch
-                    checked={settings.appearance.showTimestamps}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      appearance: { ...prev.appearance, showTimestamps: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Animations</Label>
-                    <p className="text-sm text-muted-foreground">Enable smooth transitions</p>
-                  </div>
-                  <Switch
-                    checked={settings.appearance.animationsEnabled}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      appearance: { ...prev.appearance, animationsEnabled: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Collapsed Sidebar</Label>
-                    <p className="text-sm text-muted-foreground">Start with sidebar minimized</p>
-                  </div>
-                  <Switch
-                    checked={settings.appearance.sidebarCollapsed}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      appearance: { ...prev.appearance, sidebarCollapsed: checked }
-                    }))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Appearance')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Appearance')} disabled={isLoading}>
-              Save Appearance Settings
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Notifications Settings */}
-        <TabsContent value="notifications" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Mail className="h-5 w-5" />
-                  Email Notifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {Object.entries(settings.notifications.email).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <Label className="text-sm capitalize">
-                      {key.replace(/([A-Z])/g, ' $1').trim()}
-                    </Label>
-                    <Switch
-                      checked={value}
-                      onCheckedChange={(checked) => setSettings(prev => ({
-                        ...prev,
-                        notifications: {
-                          ...prev.notifications,
-                          email: { ...prev.notifications.email, [key]: checked }
-                        }
-                      }))}
-                    />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Phone className="h-5 w-5" />
-                  SMS Notifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {Object.entries(settings.notifications.sms).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <Label className="text-sm capitalize">
-                      {key.replace(/([A-Z])/g, ' $1').trim()}
-                    </Label>
-                    <Switch
-                      checked={value}
-                      onCheckedChange={(checked) => setSettings(prev => ({
-                        ...prev,
-                        notifications: {
-                          ...prev.notifications,
-                          sms: { ...prev.notifications.sms, [key]: checked }
-                        }
-                      }))}
-                    />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Enhanced Push Notifications */}
-          <PushNotificationSettings 
-            settings={settings.notifications}
-            onSettingsChange={(newSettings) => setSettings(prev => ({
-              ...prev,
-              notifications: newSettings
-            }))}
-          />
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Notifications')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Notifications')} disabled={isLoading}>
-              Save Notification Settings
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Company Settings */}
-        <TabsContent value="company" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
-                  Company Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="companyName">Company Name</Label>
-                  <Input
-                    id="companyName"
-                    value={settings.company.name}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      company: { ...prev.company, name: e.target.value }
-                    }))}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="domain">Domain</Label>
-                  <Input
-                    id="domain"
-                    value={settings.company.domain}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      company: { ...prev.company, domain: e.target.value }
-                    }))}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="address">Address</Label>
-                  <Textarea
-                    id="address"
-                    value={settings.company.address}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      company: { ...prev.company, address: e.target.value }
-                    }))}
-                    rows={2}
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="industry">Industry</Label>
-                    <Select value={settings.company.industry}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="technology">Technology</SelectItem>
-                        <SelectItem value="finance">Finance</SelectItem>
-                        <SelectItem value="healthcare">Healthcare</SelectItem>
-                        <SelectItem value="education">Education</SelectItem>
-                        <SelectItem value="retail">Retail</SelectItem>
-                        <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="size">Company Size</Label>
-                    <Select value={settings.company.size}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1-10">1-10 employees</SelectItem>
-                        <SelectItem value="11-50">11-50 employees</SelectItem>
-                        <SelectItem value="51-200">51-200 employees</SelectItem>
-                        <SelectItem value="201-500">201-500 employees</SelectItem>
-                        <SelectItem value="500+">500+ employees</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5" />
-                  Working Schedule
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="workingHours">Working Hours</Label>
-                  <Input
-                    id="workingHours"
-                    value={settings.company.workingHours}
-                    onChange={(e) => setSettings(prev => ({
-                      ...prev,
-                      company: { ...prev.company, workingHours: e.target.value }
-                    }))}
-                    placeholder="e.g., 9:00 AM - 6:00 PM"
-                  />
-                </div>
-                
-                <div>
-                  <Label>Working Days</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
-                      <div key={day} className="flex items-center space-x-2">
-                        <Switch
-                          checked={settings.company.workingDays.includes(day)}
-                          onCheckedChange={(checked) => {
-                            setSettings(prev => ({
-                              ...prev,
-                              company: {
-                                ...prev.company,
-                                workingDays: checked
-                                  ? [...prev.company.workingDays, day]
-                                  : prev.company.workingDays.filter(d => d !== day)
-                              }
-                            }));
-                          }}
-                        />
-                        <Label className="capitalize text-sm">{day}</Label>
+              <TabsContent value="account" className="space-y-4 sm:space-y-6">
+                {/* Account Security */}
+                <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                  <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
+                    <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                        <Shield className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
                       </div>
-                    ))}
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="holidayCalendar">Holiday Calendar</Label>
-                    <Select value={settings.company.holidayCalendar}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="us">United States</SelectItem>
-                        <SelectItem value="uk">United Kingdom</SelectItem>
-                        <SelectItem value="ca">Canada</SelectItem>
-                        <SelectItem value="au">Australia</SelectItem>
-                        <SelectItem value="in">India</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="fiscalYear">Fiscal Year Start</Label>
-                    <Select value={settings.company.fiscalYearStart}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="january">January</SelectItem>
-                        <SelectItem value="april">April</SelectItem>
-                        <SelectItem value="july">July</SelectItem>
-                        <SelectItem value="october">October</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Company')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Company')} disabled={isLoading}>
-              Save Company Settings
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Privacy Settings */}
-        <TabsContent value="privacy" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Lock className="h-5 w-5" />
-                Data & Privacy Controls
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="profileVisibility">Profile Visibility</Label>
-                  <Select value={settings.privacy.profileVisibility}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="public">Public</SelectItem>
-                      <SelectItem value="team">Team Only</SelectItem>
-                      <SelectItem value="private">Private</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="dataRetention">Data Retention (days)</Label>
-                  <Select value={settings.privacy.dataRetention.toString()}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="90">90 days</SelectItem>
-                      <SelectItem value="180">6 months</SelectItem>
-                      <SelectItem value="365">1 year</SelectItem>
-                      <SelectItem value="1095">3 years</SelectItem>
-                      <SelectItem value="-1">Forever</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <Separator />
-              
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Activity Tracking</Label>
-                    <p className="text-sm text-muted-foreground">Track user actions for analytics</p>
-                  </div>
-                  <Switch
-                    checked={settings.privacy.activityTracking}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      privacy: { ...prev.privacy, activityTracking: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Analytics Opt-in</Label>
-                    <p className="text-sm text-muted-foreground">Share usage data to improve the product</p>
-                  </div>
-                  <Switch
-                    checked={settings.privacy.analyticsOptIn}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      privacy: { ...prev.privacy, analyticsOptIn: checked }
-                    }))}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Data Export</Label>
-                    <p className="text-sm text-muted-foreground">Allow users to export their data</p>
-                  </div>
-                  <Switch
-                    checked={settings.privacy.exportEnabled}
-                    onCheckedChange={(checked) => setSettings(prev => ({
-                      ...prev,
-                      privacy: { ...prev.privacy, exportEnabled: checked }
-                    }))}
-                  />
-                </div>
-              </div>
-              
-              <Separator />
-              
-              <div className="space-y-4">
-                <h4 className="font-medium">Data Management Actions</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Button variant="outline" size="sm" onClick={handleExportData}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export All Data
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <Archive className="h-4 w-4 mr-2" />
-                    Archive Old Data
-                  </Button>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Account
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Privacy')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Privacy')} disabled={isLoading}>
-              Save Privacy Settings
-            </Button>
-          </div>
-        </TabsContent>
-
-        {/* Integrations Settings */}
-        <TabsContent value="integrations" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { name: 'Google Calendar', key: 'googleCalendar', icon: Calendar, description: 'Sync events and meetings' },
-              { name: 'Microsoft Teams', key: 'microsoftTeams', icon: Wifi, description: 'Video calls and chat' },
-              { name: 'Slack', key: 'slack', icon: Zap, description: 'Team communication' },
-              { name: 'Zoom', key: 'zoom', icon: Monitor, description: 'Video conferencing' },
-              { name: 'GitHub', key: 'github', icon: FileText, description: 'Code repository integration' },
-              { name: 'Jira', key: 'jira', icon: BarChart3, description: 'Project management' }
-            ].map((integration) => {
-              const Icon = integration.icon;
-              const isConnected = settings.integrations[integration.key as keyof typeof settings.integrations];
-              
-              return (
-                <Card key={integration.key}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-muted rounded-lg">
-                          <Icon className="h-5 w-5" />
-                        </div>
+                      <span className="text-sm sm:text-base lg:text-lg">
+                        <span className="hidden sm:inline">Account Security</span>
+                        <span className="sm:hidden">Security</span>
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
+                    <div className="space-y-4 sm:space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                         <div>
-                          <h4 className="font-medium">{integration.name}</h4>
-                          <p className="text-sm text-muted-foreground">{integration.description}</p>
-                        </div>
-                      </div>
-                      <Badge variant={isConnected ? 'default' : 'outline'}>
-                        {isConnected ? 'Connected' : 'Not Connected'}
-                      </Badge>
+                          <Label htmlFor="currentPassword" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Current Password
+                          </Label>
+                          <Input
+                            id="currentPassword"
+                            type="password"
+                            className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            placeholder="Enter current password"
+                          />
+                  </div>
+                        <div>
+                          <Label htmlFor="newPassword" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            New Password
+                          </Label>
+                          <Input
+                            id="newPassword"
+                            type="password"
+                            className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            placeholder="Enter new password"
+                          />
                     </div>
-                    
-                    <Button
-                      size="sm"
-                      variant={isConnected ? 'destructive' : 'default'}
-                      className="w-full"
-                      onClick={() => setSettings(prev => ({
-                        ...prev,
-                        integrations: {
-                          ...prev.integrations,
-                          [integration.key]: !isConnected
-                        }
-                      }))}
-                    >
-                      {isConnected ? 'Disconnect' : 'Connect'}
-                    </Button>
+                  </div>
+                      
+                      <div>
+                        <Label htmlFor="confirmPassword" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                          Confirm New Password
+                        </Label>
+                        <Input
+                          id="confirmPassword"
+                          type="password"
+                          className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                          placeholder="Confirm new password"
+                        />
+                      </div>
+
+                      <Separator className="my-4 sm:my-6" />
+
+                      <div className="flex justify-end gap-2 sm:gap-3">
+                        <Button 
+                          type="button" 
+                          variant="outline"
+                          className="border-slate-200 dark:border-slate-700 h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
+                        >
+                          <span className="hidden sm:inline">Cancel</span>
+                          <span className="sm:hidden">Cancel</span>
+                        </Button>
+                        <Button 
+                          type="button"
+                          className="bg-red-600 hover:bg-red-700 text-white h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
+                        >
+                          <Lock className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                          <span className="hidden sm:inline">Update Password</span>
+                          <span className="sm:hidden">Update</span>
+                        </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+                {/* Company Overview */}
+                <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                  <CardHeader className="text-center p-3 sm:p-4 lg:p-6">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 mx-auto bg-gradient-to-r from-red-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg">
+                      <Building2 className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12 text-white" />
+                    </div>
+                    <div className="mt-3 sm:mt-4">
+                      <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
+                        {companyForm.name || 'Your Company'}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                        {companyForm.domain || 'company.com'}
+                      </p>
+                      <div className="flex flex-wrap gap-1 sm:gap-2 mt-3 sm:mt-4 justify-center">
+                        <Badge className={`${getPlanBadgeColor(companyForm.plan)} text-xs px-2 py-1 font-medium border shadow-sm`}>
+                          <div className="flex items-center gap-1">
+                            <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
+                              companyForm.plan?.toLowerCase() === 'starter' ? 'bg-slate-500' :
+                              companyForm.plan?.toLowerCase() === 'professional' ? 'bg-blue-500' :
+                              companyForm.plan?.toLowerCase() === 'enterprise' ? 'bg-purple-500' : 'bg-slate-500'
+                            }`}></div>
+                          <span className="hidden sm:inline">{companyForm.plan?.charAt(0).toUpperCase() + companyForm.plan?.slice(1)} Plan</span>
+                          <span className="sm:hidden">{companyForm.plan?.charAt(0).toUpperCase() + companyForm.plan?.slice(1)}</span>
+                          </div>
+                        </Badge>
+                        <Badge className={`${getStatusBadgeColor(companyForm.status)} text-xs px-2 py-1 font-medium border shadow-sm`}>
+                          <div className="flex items-center gap-1">
+                            <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
+                              companyForm.status?.toLowerCase() === 'active' ? 'bg-green-500' :
+                              companyForm.status?.toLowerCase() === 'trial' ? 'bg-amber-500' :
+                              companyForm.status?.toLowerCase() === 'suspended' ? 'bg-red-500' : 'bg-slate-500'
+                            }`}></div>
+                          <span className="hidden sm:inline">{companyForm.status?.charAt(0).toUpperCase() + companyForm.status?.slice(1)}</span>
+                          <span className="sm:hidden">{companyForm.status?.charAt(0).toUpperCase() + companyForm.status?.slice(1)}</span>
+                          </div>
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
+                    <div className="space-y-3 sm:space-y-4">
+                      <div className="flex items-center justify-between p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                        <div className="flex items-center gap-1 sm:gap-2">
+                          <Users className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+                          <span className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">Users</span>
+                        </div>
+                        <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                          {companyForm.currentUsers} / {companyForm.maxUsers}
+                        </span>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
-              );
-            })}
+
+                {/* Company Information */}
+                <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                  <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
+                    <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                        <Building2 className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+                      </div>
+                      <span className="text-sm sm:text-base lg:text-lg">
+                        <span className="hidden sm:inline">Company Information</span>
+                        <span className="sm:hidden">Company Info</span>
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
+                  {isCompanyLoading ? (
+                    <div className="flex items-center justify-center py-8 sm:py-12">
+                        <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-red-600" />
+                        <span className="ml-2 sm:ml-3 text-sm sm:text-lg text-slate-900 dark:text-slate-100">Loading company data...</span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleCompanySubmit} className="space-y-4 sm:space-y-6">
+                      <div>
+                          <Label htmlFor="companyName" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                          Company Name
+                        </Label>
+                        <div className="relative mt-1 sm:mt-2">
+                          <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                          <Input
+                            id="companyName"
+                            value={companyForm.name}
+                            onChange={(e) => setCompanyForm(prev => ({ ...prev, name: e.target.value }))}
+                              className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                        <div>
+                            <Label htmlFor="domain" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Domain
+                          </Label>
+                          <div className="relative mt-1 sm:mt-2">
+                            <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                            <Input
+                              id="domain"
+                              value={companyForm.domain}
+                              onChange={(e) => setCompanyForm(prev => ({ ...prev, domain: e.target.value }))}
+                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                              placeholder="company.com"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                            <Label htmlFor="companyEmail" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Company Email
+                          </Label>
+                          <div className="relative mt-1 sm:mt-2">
+                            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                            <Input
+                              id="companyEmail"
+                              type="email"
+                              value={companyForm.email}
+                              onChange={(e) => setCompanyForm(prev => ({ ...prev, email: e.target.value }))}
+                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                              placeholder="info@company.com"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                        <div>
+                            <Label htmlFor="companyPhone" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Phone Number
+                          </Label>
+                          <div className="relative mt-1 sm:mt-2">
+                            <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                            <Input
+                              id="companyPhone"
+                              value={companyForm.phone}
+                              onChange={(e) => setCompanyForm(prev => ({ ...prev, phone: e.target.value }))}
+                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                              placeholder="+1 (555) 123-4567"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                            <Label htmlFor="companyLogo" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Company Logo URL
+                          </Label>
+                          <div className="relative mt-1 sm:mt-2">
+                            <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                            <Input
+                              id="companyLogo"
+                              value={companyForm.logo}
+                              onChange={(e) => setCompanyForm(prev => ({ ...prev, logo: e.target.value }))}
+                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                              placeholder="https://example.com/logo.png"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <Separator className="my-4 sm:my-6" />
+
+                      <div>
+                        <Label className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 mb-3 sm:mb-4 block">
+                          <span className="hidden sm:inline">Company Address</span>
+                          <span className="sm:hidden">Address</span>
+                        </Label>
+                        <div className="space-y-3 sm:space-y-4">
+                          <div>
+                            <Label htmlFor="street" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                              Street Address
+                            </Label>
+                            <Input
+                              id="street"
+                              value={companyForm.address.street}
+                              onChange={(e) => setCompanyForm(prev => ({ 
+                                ...prev, 
+                                address: { ...prev.address, street: e.target.value }
+                              }))}
+                              className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                              placeholder="123 Business Street"
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                            <div>
+                              <Label htmlFor="city" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                City
+                              </Label>
+                              <Input
+                                id="city"
+                                value={companyForm.address.city}
+                                onChange={(e) => setCompanyForm(prev => ({ 
+                                  ...prev, 
+                                  address: { ...prev.address, city: e.target.value }
+                                }))}
+                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                                placeholder="San Francisco"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="state" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                State/Province
+                              </Label>
+                              <Input
+                                id="state"
+                                value={companyForm.address.state}
+                                onChange={(e) => setCompanyForm(prev => ({ 
+                                  ...prev, 
+                                  address: { ...prev.address, state: e.target.value }
+                                }))}
+                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                                placeholder="California"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                            <div>
+                              <Label htmlFor="country" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                Country
+                              </Label>
+                              <Input
+                                id="country"
+                                value={companyForm.address.country}
+                                onChange={(e) => setCompanyForm(prev => ({ 
+                                  ...prev, 
+                                  address: { ...prev.address, country: e.target.value }
+                                }))}
+                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                                placeholder="United States"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="zipCode" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                ZIP/Postal Code
+                              </Label>
+                              <Input
+                                id="zipCode"
+                                value={companyForm.address.zipCode}
+                                onChange={(e) => setCompanyForm(prev => ({ 
+                                  ...prev, 
+                                  address: { ...prev.address, zipCode: e.target.value }
+                                }))}
+                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
+                                placeholder="94107"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                        <div>
+                            <Label htmlFor="timezone" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Timezone
+                          </Label>
+                          <Select
+                            value={companyForm.timezone}
+                            onValueChange={(value) => setCompanyForm(prev => ({ ...prev, timezone: value }))}
+                          >
+                              <SelectTrigger className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm">
+                              <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 mr-2" />
+                              <SelectValue placeholder="Select timezone" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="UTC" className="text-xs sm:text-sm">UTC (Coordinated Universal Time)</SelectItem>
+                              <SelectItem value="America/New_York" className="text-xs sm:text-sm">Eastern Time (EST/EDT)</SelectItem>
+                              <SelectItem value="America/Chicago" className="text-xs sm:text-sm">Central Time (CST/CDT)</SelectItem>
+                              <SelectItem value="America/Denver" className="text-xs sm:text-sm">Mountain Time (MST/MDT)</SelectItem>
+                              <SelectItem value="America/Los_Angeles" className="text-xs sm:text-sm">Pacific Time (PST/PDT)</SelectItem>
+                              <SelectItem value="Europe/London" className="text-xs sm:text-sm">GMT (Greenwich Mean Time)</SelectItem>
+                              <SelectItem value="Asia/Kolkata" className="text-xs sm:text-sm">IST (India Standard Time)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                            <Label htmlFor="language" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
+                            Language
+                          </Label>
+                          <Select
+                            value={companyForm.language}
+                            onValueChange={(value) => setCompanyForm(prev => ({ ...prev, language: value }))}
+                          >
+                              <SelectTrigger className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm">
+                              <Languages className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 mr-2" />
+                              <SelectValue placeholder="Select language" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="en" className="text-xs sm:text-sm">English</SelectItem>
+                              <SelectItem value="es" className="text-xs sm:text-sm">Spanish</SelectItem>
+                              <SelectItem value="fr" className="text-xs sm:text-sm">French</SelectItem>
+                              <SelectItem value="de" className="text-xs sm:text-sm">German</SelectItem>
+                              <SelectItem value="it" className="text-xs sm:text-sm">Italian</SelectItem>
+                              <SelectItem value="pt" className="text-xs sm:text-sm">Portuguese</SelectItem>
+                              <SelectItem value="hi" className="text-xs sm:text-sm">Hindi</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <Separator className="my-4 sm:my-6" />
+
+                      <div className="flex justify-end gap-2 sm:gap-3">
+                        <Button 
+                          type="submit" 
+                          disabled={updateCompanyMutation.isPending}
+                            className="bg-red-600 hover:bg-red-700 text-white h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
+                        >
+                          {updateCompanyMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">Saving...</span>
+                              <span className="sm:hidden">Saving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                              <span className="hidden sm:inline">Save Company</span>
+                              <span className="sm:hidden">Save</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* API Test */}
+              <ApiTest />
+              
+              {/* Simple Feature Test */}
+              <SimpleFeatureTest />
+              
+              {/* Feature Debug Panel */}
+              <FeatureDebugPanel />
+              
+              {/* Feature Test Panel */}
+              <FeatureTestPanel />
+              
+              {/* Feature Access Status */}
+              <FeatureAccessStatus />
+          </TabsContent>
+        </Tabs>
           </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => handleReset('Integrations')}>
-              Reset Changes
-            </Button>
-            <Button onClick={() => handleSave('Integrations')} disabled={isLoading}>
-              Save Integration Settings
-            </Button>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
     </div>
   );
 }

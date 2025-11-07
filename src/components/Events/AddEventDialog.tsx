@@ -164,7 +164,7 @@ export default function AddEventDialog({ open, onOpenChange, onAddEvent }: AddEv
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const roles: UserRole[] = ['super_admin', 'admin', 'department_head', 'manager', 'executive'];
+  const roles: UserRole[] = ['super_admin', 'admin', 'department_head', 'manager', 'member'];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

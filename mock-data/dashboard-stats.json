@@ -1,0 +1,44 @@
+{
+  "totalUsers": 3,
+  "totalProjects": 5,
+  "totalTasks": 12,
+  "completedTasks": 8,
+  "overdueTasks": 2,
+  "activeProjects": 3,
+  "completionRate": 67,
+  "recentActivity": [
+    {
+      "id": "1",
+      "type": "user_joined",
+      "message": "Sarah Developer joined the team",
+      "timestamp": "2024-01-15T08:45:00Z",
+      "icon": "user-plus"
+    },
+    {
+      "id": "2",
+      "type": "project_completed",
+      "message": "Website Redesign project completed",
+      "timestamp": "2024-01-15T07:30:00Z",
+      "icon": "check-circle"
+    },
+    {
+      "id": "3",
+      "type": "task_overdue",
+      "message": "Database optimization task is overdue",
+      "timestamp": "2024-01-15T06:15:00Z",
+      "icon": "alert-triangle"
+    }
+  ],
+  "quickStats": {
+    "thisWeek": {
+      "tasksCompleted": 15,
+      "hoursLogged": 120,
+      "projectsStarted": 2
+    },
+    "thisMonth": {
+      "tasksCompleted": 45,
+      "hoursLogged": 480,
+      "projectsCompleted": 3
+    }
+  }
+}

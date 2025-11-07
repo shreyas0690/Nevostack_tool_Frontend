@@ -1,9 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { 
   ClipboardList, 
   Users, 
@@ -17,10 +26,15 @@ import {
   Clock,
   AlertCircle,
   XCircle,
-  Filter
+  Filter,
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
-import { mockTasks, mockUsers, mockDepartments, currentUser } from '@/data/mockData';
-import { Task, User, Department, TaskStatus, TaskPriority } from '@/types/company';
+import { mockUsers, mockDepartments } from '@/data/mockData';
+import { User, Department, TaskStatus, TaskPriority } from '@/types/company';
+import { taskService, type Task } from '@/services/taskService';
+import { departmentService } from '@/services/departmentService';
+import { useQuery } from '@tanstack/react-query';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,43 +58,111 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
+import toast from 'react-hot-toast';
 import AddTaskDialog from './AddTaskDialog';
 import EditTaskDialog from './EditTaskDialog';
 import MeetingDialog from './MeetingDialog';
 
 export default function TasksManagement() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
-  const [tasks, setTasks] = useState<Task[]>(mockTasks);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const { toast } = useToast();
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
+  // Fetch tasks from API
+  const { data: tasks = [], isLoading, refetch: refetchTasks } = useQuery({
+    queryKey: ['tasks'],
+    queryFn: async () => {
+      const response = await taskService.getTasks();
+      return response.data || [];
+    }
+  });
+
+  // Fetch departments from API
+  const { data: departmentsData = [], isLoading: departmentsLoading } = useQuery({
+    queryKey: ['departments'],
+    queryFn: async () => {
+      const response = await departmentService.getDepartments({ limit: 1000 });
+      return response.data || [];
+    }
+  });
 
   const filteredTasks = tasks.filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          task.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
-    const matchesDepartment = departmentFilter === 'all' || task.departmentId === departmentFilter;
     
-    return matchesSearch && matchesStatus && matchesPriority && matchesDepartment;
+    // Handle department filtering - departmentId can be an object (populated) or string
+    let matchesDepartment = true;
+    if (departmentFilter !== 'all') {
+      const taskDept = (task as any).departmentId;
+      if (taskDept) {
+        // If departmentId is populated (object), check the _id field
+        const deptId = typeof taskDept === 'object' ? taskDept._id : taskDept;
+        matchesDepartment = deptId === departmentFilter;
+      } else {
+        // Fallback to category if no departmentId
+        matchesDepartment = task.category === departmentFilter;
+      }
+    }
+    
+    return matchesSearch && matchesPriority && matchesDepartment;
   });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredTasks.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTasks = filteredTasks.slice(startIndex, endIndex);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, priorityFilter, departmentFilter]);
 
   const getUser = (userId: string): User | undefined => {
     return mockUsers.find(user => user.id === userId);
   };
 
+  // Resolve user-like values (id string or object) to a display object { id, name }
+  const resolveUserDisplay = (userField: any) => {
+    if (!userField) return null;
+    if (typeof userField === 'object') {
+      const id = (userField as any)._id || (userField as any).id || null;
+      const name = (userField as any).name || (userField as any).fullName || (((userField as any).firstName || '') + ' ' + ((userField as any).lastName || '')).trim() || (userField as any).email || (userField as any).username || null;
+      return { id, name };
+    }
+    if (typeof userField === 'string') {
+      const u = mockUsers.find(u => String(u.id) === String(userField) || String((u as any)._id) === String(userField));
+      if (u) return { id: u.id || (u as any)._id, name: u.name || (u as any).fullName || u.email };
+      return { id: userField, name: userField };
+    }
+    return null;
+  };
+
+  const formatAssignedByRole = (role?: string) => {
+    switch (role) {
+      case 'super_admin': return 'Super Admin';
+      case 'admin': return 'Admin';
+      case 'manager': return 'Manager';
+      default: return role || 'Unknown';
+    }
+  };
+
   const getDepartment = (deptId: string): Department | undefined => {
+    // Use real departments from backend, fallback to mock data
+    const realDept = departmentsData.find(dept => dept.id === deptId);
+    if (realDept) return realDept;
     return mockDepartments.find(dept => dept.id === deptId);
   };
 
-  const getStatusIcon = (status: TaskStatus) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle className="w-4 h-4 text-green-600" />;
       case 'in_progress': return <Clock className="w-4 h-4 text-blue-600" />;
@@ -98,56 +180,61 @@ export default function TasksManagement() {
     }
   };
 
-  const addTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    setTasks([...tasks, newTask]);
-    toast({
-      title: "Task Created",
-      description: `${taskData.title} has been assigned successfully.`,
-    });
+  const addTask = async (taskData: any) => {
+    try {
+      await taskService.createTask({
+        title: taskData.title,
+        description: taskData.description,
+        assignedTo: taskData.assignedTo,
+        priority: taskData.priority,
+        category: taskData.category || 'General',
+        dueDate: taskData.dueDate ? new Date(taskData.dueDate).toISOString() : undefined
+      });
+      refetchTasks();
+      toast.success(`Task "${taskData.title}" created successfully! 🎉`);
+    } catch (error) {
+      toast.error("Failed to create task. Please try again.");
+    }
   };
 
-  const editTask = (id: string, taskData: Omit<Task, 'id' | 'createdAt' | 'comments'>) => {
-    setTasks(tasks.map(task => 
-      task.id === id 
-        ? { 
-            ...task, 
-            ...taskData,
-            updatedAt: new Date()
-          }
-        : task
-    ));
-    toast({
-      title: "Task Updated",
-      description: `${taskData.title} has been updated successfully.`,
-    });
+  const editTask = async (id: string, taskData: any) => {
+    try {
+      await taskService.updateTask(id, {
+        title: taskData.title,
+        description: taskData.description,
+        assignedTo: taskData.assignedTo,
+        priority: taskData.priority,
+        status: taskData.status,
+        category: taskData.category || 'General',
+        dueDate: taskData.dueDate ? new Date(taskData.dueDate).toISOString() : undefined
+      });
+      refetchTasks();
+      toast.success(`Task "${taskData.title}" updated successfully! ✅`);
+    } catch (error) {
+      toast.error("Failed to update task. Please try again.");
+    }
   };
 
-  const deleteTask = (id: string) => {
-    const task = tasks.find(t => t.id === id);
-    setTasks(tasks.filter(task => task.id !== id));
-    toast({
-      title: "Task Deleted",
-      description: `${task?.title} has been deleted successfully.`,
-      variant: "destructive",
-    });
+  const deleteTask = async (id: string) => {
+    try {
+      const task = tasks.find(t => t.id === id);
+      await taskService.deleteTask(id);
+      refetchTasks();
+      toast.success(`Task "${task?.title}" deleted successfully! 🗑️`);
+    } catch (error) {
+      toast.error("Failed to delete task. Please try again.");
+    }
   };
 
-  const quickUpdateStatus = (taskId: string, newStatus: TaskStatus) => {
-    setTasks(tasks.map(task => 
-      task.id === taskId 
-        ? { ...task, status: newStatus, updatedAt: new Date() }
-        : task
-    ));
-    toast({
-      title: "Status Updated",
-      description: `Task status updated to ${newStatus.replace('_', ' ')}.`,
-    });
+  const quickUpdateStatus = async (taskId: string, newStatus: string) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      await taskService.updateTask(taskId, { status: newStatus as any });
+      refetchTasks();
+      toast.success(`Task "${task?.title}" status updated to ${newStatus.replace('_', ' ')}! 🔄`);
+    } catch (error) {
+      toast.error("Failed to update task status. Please try again.");
+    }
   };
 
   const stats = [
@@ -177,167 +264,296 @@ export default function TasksManagement() {
     }
   ];
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50/50 dark:bg-slate-900/50 p-6">
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Loading Header */}
+          <div className="relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10 dark:to-transparent rounded-xl"></div>
+            <div className="relative bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200/60 dark:border-slate-700/60 p-6 shadow-lg shadow-red-500/5">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-red-500 via-red-600 to-red-700 dark:from-red-400 dark:via-red-500 dark:to-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
+                  <ClipboardList className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Task Management</h1>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm">Manage and track team tasks and assignments</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Loading Spinner */}
+          <div className="flex flex-col items-center justify-center min-h-[400px] space-y-6">
+            <div className="relative">
+              {/* Outer ring */}
+              <div className="w-16 h-16 border-4 border-slate-200 dark:border-slate-700 rounded-full animate-spin border-t-red-600"></div>
+              {/* Inner ring */}
+              <div className="absolute top-2 left-2 w-12 h-12 border-4 border-slate-100 dark:border-slate-600 rounded-full animate-spin border-t-red-400" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+              {/* Center dot */}
+              <div className="absolute top-6 left-6 w-4 h-4 bg-red-600 rounded-full animate-pulse"></div>
+            </div>
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Loading Tasks</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Fetching your task data...</p>
+              <div className="flex justify-center space-x-1 mt-4">
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Task Management</h1>
-          <p className="text-muted-foreground">Manage and track team tasks and assignments</p>
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-900/50 p-6">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10 dark:to-transparent rounded-xl"></div>
+          <div className="relative bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200/60 dark:border-slate-700/60 p-6 shadow-lg shadow-red-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-red-500 via-red-600 to-red-700 dark:from-red-400 dark:via-red-500 dark:to-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
+                  <ClipboardList className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Task Management</h1>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm">Manage and track team tasks and assignments</p>
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                      <span>System Active</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                      <TrendingUp className="h-3 w-3" />
+                      <span>Real-time Updates</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowMeetingDialog(true)}
+                  className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-red-300 dark:hover:border-red-600 rounded-lg font-medium transition-all duration-200"
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  Schedule Meeting
+                </Button>
+                <Button 
+                  onClick={() => setShowAddDialog(true)}
+                  className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/25 rounded-lg font-medium transition-all duration-200 hover:scale-105"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Task
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowMeetingDialog(true)}>
-            <Users className="w-4 h-4 mr-2" />
-            Schedule Meeting
-          </Button>
-          <Button onClick={() => setShowAddDialog(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Task
-          </Button>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {stats.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <Card key={stat.title} className="group border-slate-200 dark:border-slate-700 shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">{stat.title}</p>
+                      <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{stat.value}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/30 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <Icon className={`h-5 w-5 ${stat.color}`} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.title}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
-                <Icon className={`h-4 w-4 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+        {/* Filters */}
+        <Card className="border-slate-200 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+          <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <CardTitle className="flex items-center gap-3 text-slate-900 dark:text-slate-100">
+              <div className="w-8 h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                <Filter className="h-4 w-4 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Filter Tasks</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Search and filter your tasks</p>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search tasks..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 h-12 rounded-xl border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400"
+                />
+              </div>
+              
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger className="h-12 rounded-xl border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400">
+                  <SelectValue placeholder="Filter by priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priority</SelectItem>
+                  <SelectItem value="low">🟢 Low</SelectItem>
+                  <SelectItem value="medium">🟡 Medium</SelectItem>
+                  <SelectItem value="high">🟠 High</SelectItem>
+                  <SelectItem value="urgent">🔴 Urgent</SelectItem>
+                </SelectContent>
+              </Select>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-4 items-center">
-        <div className="relative flex-1 min-w-64">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search tasks..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="assigned">Assigned</SelectItem>
-            <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="blocked">Blocked</SelectItem>
-          </SelectContent>
-        </Select>
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                <SelectTrigger className="h-12 rounded-xl border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400">
+                  <SelectValue placeholder="Filter by department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {departmentsData.map((dept) => (
+                    <SelectItem key={dept.id} value={dept.id}>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: dept.color || '#6B7280' }}
+                        />
+                        {dept.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Priority</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="urgent">Urgent</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Department" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Departments</SelectItem>
-            {mockDepartments.map((dept) => (
-              <SelectItem key={dept.id} value={dept.id}>
-                {dept.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Tasks List */}
-      <div className="space-y-4">
-        {filteredTasks.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <ClipboardList className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No tasks found</h3>
-              <p className="text-muted-foreground text-center mb-4">
-                {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || departmentFilter !== 'all' 
-                  ? 'Try adjusting your filters' 
-                  : 'Get started by creating your first task'}
-              </p>
-              <Button onClick={() => setShowAddDialog(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Task
-              </Button>
-            </CardContent>
-          </Card>
+        {/* Tasks List */}
+        <Card className="border-slate-200 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+          <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <CardTitle className="flex items-center gap-3 text-slate-900 dark:text-slate-100">
+              <div className="w-8 h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                <ClipboardList className="h-4 w-4 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">All Tasks</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Manage and track your team's tasks</p>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            {paginatedTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ClipboardList className="h-8 w-8 text-slate-400 dark:text-slate-500" />
+                </div>
+                <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
+                  {searchTerm || priorityFilter !== 'all' || departmentFilter !== 'all' 
+                    ? 'No tasks match your filters' 
+                    : 'No tasks found'}
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400 text-center mb-6">
+                  {searchTerm || priorityFilter !== 'all' || departmentFilter !== 'all' 
+                    ? 'Try adjusting your search criteria or filters' 
+                    : 'Get started by creating your first task'}
+                </p>
+                <Button 
+                  onClick={() => setShowAddDialog(true)}
+                  className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/25 rounded-lg font-medium transition-all duration-200 hover:scale-105"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Task
+                </Button>
+              </div>
         ) : (
-          filteredTasks.map((task) => {
-            const assignedUser = getUser(task.assignedTo);
-            const assignedByUser = getUser(task.assignedBy);
-            const department = getDepartment(task.departmentId);
-            const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'completed';
+          paginatedTasks.map((task) => {
+            const assignedUserResolved = resolveUserDisplay(task.assignedTo);
+            const assignedByUserResolved = resolveUserDisplay(task.assignedBy);
+            const taskDept = (task as any).departmentId;
+            let taskDeptId;
+            if (taskDept) {
+              // If departmentId is populated (object), use the _id field
+              taskDeptId = typeof taskDept === 'object' ? taskDept._id : taskDept;
+            } else {
+              // Fallback to category if no departmentId
+              taskDeptId = task.category;
+            }
+            const department = getDepartment(taskDeptId);
+            const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'completed' && task.status !== 'cancelled';
             
             return (
-              <Card key={task.id} className={`${isOverdue ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20' : ''}`}>
-                <CardContent className="p-6">
+              <Card key={task.id} className={`group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-4 hover:shadow-md transition-shadow duration-200 overflow-hidden ${isOverdue ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20' : ''}`}>
+                <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 space-y-3">
                       <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="text-lg font-semibold flex items-center gap-2">
-                            {getStatusIcon(task.status)}
-                            {task.title}
-                            {isOverdue && <Badge variant="destructive" className="text-xs">Overdue</Badge>}
-                          </h3>
-                          <p className="text-sm text-muted-foreground mt-1">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                              {getStatusIcon(task.status as any)}
+                            </div>
+                            <div className="flex-1">
+                              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
+                                {task.title}
+                              </h3>
+                              {isOverdue && (
+                                <Badge variant="destructive" className="text-xs mt-1">
+                                  Overdue
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 ml-11 leading-relaxed">
                             {task.description}
                           </p>
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-background border shadow-md">
-                            <DropdownMenuItem onClick={() => {
-                              setSelectedTask(task);
-                              setShowEditDialog(true);
-                            }}>
-                              <Edit2 className="w-4 h-4 mr-2" />
-                              Edit Task
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => quickUpdateStatus(task.id, 'completed')} disabled={task.status === 'completed'}>
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Mark Complete
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => {
+                        <div className="flex items-center gap-2">
+                          {/* Delete Button */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
                               setSelectedTask(task);
                               setShowDeleteDialog(true);
-                            }} className="text-destructive">
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete Task
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                            }}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-background border shadow-md">
+                              <DropdownMenuItem onClick={() => {
+                                setSelectedTask(task);
+                                setShowEditDialog(true);
+                              }}>
+                                <Edit2 className="w-4 h-4 mr-2" />
+                                Edit Task
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => quickUpdateStatus(task.id, 'completed' as any)} disabled={task.status === 'completed'}>
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Complete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                       
                       <div className="flex flex-wrap items-center gap-4 text-sm">
@@ -366,7 +582,7 @@ export default function TasksManagement() {
                           <Calendar className="w-4 h-4 text-blue-600" />
                           <div>
                             <span className="text-blue-600 font-medium" style={{ fontSize: '12px' }}>
-                              Assigned: {task.createdAt.toLocaleDateString()}
+                              Assigned: {new Date(task.createdAt).toLocaleDateString()}
                             </span>
                           </div>
                         </div>
@@ -375,107 +591,55 @@ export default function TasksManagement() {
                           <Calendar className="w-4 h-4 text-muted-foreground" />
                           <div>
                             <span className={`${isOverdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`} style={{ fontSize: '12px' }}>
-                              Due: {task.dueDate.toLocaleDateString()}
+                              Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}
                             </span>
                           </div>
                         </div>
 
-                        {assignedByUser && (
+                        {assignedByUserResolved && (
                           <div className="flex items-center gap-2">
                             <Avatar className="w-4 h-4">
                               <AvatarFallback className="text-xs">
-                                {assignedByUser.name.charAt(0).toUpperCase()}
+                                {(assignedByUserResolved.name || '').charAt(0).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="text-green-600 font-medium" style={{ fontSize: '12px' }}>
-                              By: {assignedByUser.name}
-                            </span>
+                            <div>
+                              <div className="text-green-600 font-medium" style={{ fontSize: '12px' }}>
+                                By: {assignedByUserResolved.name}
+                              </div>
+                              <div className="text-muted-foreground text-xs">
+                                {formatAssignedByRole('admin')}
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
                       
-                       {/* Meeting Information */}
-                       {task.meeting?.enabled && (
-                         <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg space-y-2">
-                           <div className="flex items-center gap-2">
-                             <Users className="w-4 h-4 text-blue-600" />
-                             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                               Meeting Scheduled
-                             </span>
-                           </div>
-                           <div className="grid grid-cols-2 gap-4 text-xs text-muted-foreground">
-                             {task.meeting.meetingDate && (
-                               <div className="flex items-center gap-1">
-                                 <Calendar className="w-3 h-3" />
-                                 {task.meeting.meetingDate.toLocaleDateString()}
-                                 {task.meeting.meetingTime && ` at ${task.meeting.meetingTime}`}
-                               </div>
-                             )}
-                             {task.meeting.meetingLocation && (
-                               <div className="flex items-center gap-1">
-                                 <Badge variant="outline" className="text-xs">
-                                   📍 {task.meeting.meetingLocation}
-                                 </Badge>
-                               </div>
-                             )}
-                           </div>
-                           <div className="flex flex-wrap gap-1">
-                             {task.meeting.type === 'department' && task.meeting.selectedDepartments?.map(deptId => {
-                               const dept = mockDepartments.find(d => d.id === deptId);
-                               return dept ? (
-                                 <Badge key={deptId} variant="secondary" className="text-xs">
-                                   {dept.name}
-                                 </Badge>
-                               ) : null;
-                             })}
-                             {task.meeting.type === 'user' && task.meeting.selectedUsers?.map(userId => {
-                               const user = mockUsers.find(u => u.id === userId);
-                               return user ? (
-                                 <Badge key={userId} variant="secondary" className="text-xs">
-                                   {user.name}
-                                 </Badge>
-                               ) : null;
-                             })}
-                           </div>
-                           {task.meeting.meetingLink && (
-                             <div className="pt-1">
-                               <Button 
-                                 variant="outline" 
-                                 size="sm" 
-                                 className="h-6 text-xs"
-                                 onClick={() => window.open(task.meeting?.meetingLink, '_blank')}
-                               >
-                                 🔗 Join Meeting
-                               </Button>
-                             </div>
-                           )}
-                         </div>
-                       )}
 
                        <div className="flex items-center justify-between pt-2 border-t">
                          <div className="flex items-center gap-4">
-                           {assignedUser && (
+                           {assignedUserResolved && (
                              <div className="flex items-center gap-2">
                                <Avatar className="w-6 h-6">
                                  <AvatarFallback className="text-xs">
-                                   {assignedUser.name.charAt(0).toUpperCase()}
+                                   {assignedUserResolved.name.charAt(0).toUpperCase()}
                                  </AvatarFallback>
                                </Avatar>
                                <span className="text-sm">
-                                 Assigned to: <span className="font-medium">{assignedUser.name}</span>
+                                 Assigned to: <span className="font-medium">{assignedUserResolved.name}</span>
                                </span>
                              </div>
                            )}
                            
-                           {assignedByUser && (
+                           {assignedByUserResolved && (
                              <span className="text-xs text-muted-foreground">
-                               by {assignedByUser.name}
+                               by {assignedByUserResolved.name}
                              </span>
                            )}
                          </div>
                          
                          <div className="flex gap-2">
-                           <Select value={task.status} onValueChange={(value: TaskStatus) => quickUpdateStatus(task.id, value)}>
+                           <Select value={task.status} onValueChange={(value: string) => quickUpdateStatus(task.id, value)}>
                              <SelectTrigger className="w-32 h-8">
                                <SelectValue />
                              </SelectTrigger>
@@ -497,22 +661,94 @@ export default function TasksManagement() {
         )}
       </div>
 
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center mt-6">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (currentPage > 1) {
+                      setCurrentPage(currentPage - 1);
+                    }
+                  }}
+                  className={currentPage <= 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+              
+              {/* Page Numbers */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // Show first page, last page, current page, and pages around current page
+                const shouldShow = 
+                  page === 1 || 
+                  page === totalPages || 
+                  (page >= currentPage - 1 && page <= currentPage + 1);
+                
+                if (!shouldShow) {
+                  // Show ellipsis for gaps
+                  if (page === currentPage - 2 || page === currentPage + 2) {
+                    return (
+                      <PaginationItem key={page}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    );
+                  }
+                  return null;
+                }
+                
+                return (
+                  <PaginationItem key={page}>
+                    <PaginationLink
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setCurrentPage(page);
+                      }}
+                      isActive={currentPage === page}
+                      className="cursor-pointer"
+                    >
+                      {page}
+                    </PaginationLink>
+                  </PaginationItem>
+                );
+              })}
+              
+              <PaginationItem>
+                <PaginationNext 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (currentPage < totalPages) {
+                      setCurrentPage(currentPage + 1);
+                    }
+                  }}
+                  className={currentPage >= totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+
       {/* Dialogs */}
       <AddTaskDialog
         open={showAddDialog}
         onClose={() => setShowAddDialog(false)}
-        onAdd={addTask}
-        currentUserId={currentUser.id}
+        onAdd={addTask as any}
+        currentUserId="1"
       />
 
       <EditTaskDialog
         open={showEditDialog}
-        task={selectedTask}
+        task={selectedTask as any}
         onClose={() => {
           setShowEditDialog(false);
           setSelectedTask(null);
         }}
-        onSave={editTask}
+        onSave={editTask as any}
       />
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

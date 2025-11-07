@@ -94,4 +94,99 @@ export const mockMeetings: Meeting[] = [
     createdAt: new Date('2024-01-25'),
     updatedAt: new Date('2024-01-30'),
   },
+  // More HOD-focused demo meetings
+  {
+    id: 'meeting-11',
+    title: 'HOD Strategy Session',
+    description: 'Strategy alignment session for department heads',
+    type: 'department',
+    date: new Date('2024-02-27T11:00:00'),
+    duration: 90,
+    location: 'Executive Room',
+    meetingLink: 'https://meet.google.com/hod-strategy',
+    organizer: '3', // Mike Davis (HOD)
+    attendees: ['3', '8', '2'],
+    departments: ['1', '2'],
+    status: 'scheduled',
+    createdAt: new Date('2024-02-18'),
+    updatedAt: new Date('2024-02-18'),
+  },
+  {
+    id: 'meeting-12',
+    title: 'Cross-Department Collaboration',
+    description: 'Discuss cross-functional initiatives between Sales and Marketing',
+    type: 'department',
+    date: new Date('2024-03-02T10:00:00'),
+    duration: 60,
+    location: 'Collab Room',
+    meetingLink: 'https://zoom.us/j/colab-123',
+    organizer: '3',
+    attendees: ['3', '4', '6', '7'],
+    departments: ['1', '2'],
+    status: 'scheduled',
+    createdAt: new Date('2024-02-20'),
+    updatedAt: new Date('2024-02-20'),
+  },
+  // Additional meetings for HOD demonstration
+  {
+    id: 'meeting-7',
+    title: 'Sales Team Weekly Standup',
+    description: 'Weekly team standup to discuss progress and blockers',
+    type: 'department',
+    date: new Date('2024-02-26T09:00:00'), // Today
+    duration: 30,
+    location: 'Sales Conference Room',
+    meetingLink: 'https://meet.google.com/sales-standup',
+    organizer: '3', // Mike Davis (HOD)
+    attendees: ['3', '4', '5', '11', '12'], // Sales team members
+    departments: ['1'], // Sales department
+    status: 'scheduled',
+    createdAt: new Date('2024-02-20'),
+    updatedAt: new Date('2024-02-20'),
+  },
+  {
+    id: 'meeting-8',
+    title: 'Q1 Sales Review',
+    description: 'Quarterly review of sales performance and target planning',
+    type: 'department',
+    date: new Date('2024-02-28T14:00:00'), // This week
+    duration: 120,
+    location: 'Main Conference Room',
+    organizer: '3', // Mike Davis (HOD)
+    attendees: ['3', '4', '5', '11', '12', '13', '20', '21'], // All sales team
+    departments: ['1'],
+    status: 'scheduled',
+    createdAt: new Date('2024-02-15'),
+    updatedAt: new Date('2024-02-15'),
+  },
+  {
+    id: 'meeting-9',
+    title: 'Manager Training Session',
+    description: 'Leadership training for department managers',
+    type: 'department',
+    date: new Date('2024-03-05T10:00:00'), // Next week
+    duration: 180,
+    location: 'Training Room B',
+    organizer: '3', // Mike Davis (HOD)
+    attendees: ['3', '4'], // HOD and Manager
+    departments: ['1'],
+    status: 'scheduled',
+    createdAt: new Date('2024-02-22'),
+    updatedAt: new Date('2024-02-22'),
+  },
+  {
+    id: 'meeting-10',
+    title: 'Client Presentation Prep',
+    description: 'Preparation meeting for upcoming client presentation',
+    type: 'department',
+    date: new Date('2024-01-20T15:30:00'), // Past - completed
+    duration: 60,
+    location: 'Sales Office',
+    organizer: '3', // Mike Davis (HOD)
+    attendees: ['3', '4', '5', '11'], // Key team members
+    departments: ['1'],
+    status: 'completed',
+    createdAt: new Date('2024-01-18'),
+    updatedAt: new Date('2024-01-20'),
+  },
 ];

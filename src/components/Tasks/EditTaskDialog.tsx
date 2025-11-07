@@ -67,7 +67,7 @@ export default function EditTaskDialog({ open, task, onClose, onSave }: EditTask
         assignedTo: task.assignedTo,
         assignedBy: task.assignedBy,
         departmentId: task.departmentId,
-        dueDate: task.dueDate.toISOString().slice(0, 16),
+        dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 16) : '',
         updatedAt: new Date()
       });
 
@@ -100,6 +100,9 @@ export default function EditTaskDialog({ open, task, onClose, onSave }: EditTask
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (task) {
+      // Find the assigned user to determine their manager
+      const assignedUser = mockUsers.find(u => u.id === formData.assignedTo);
+      
       onSave(task.id, {
         title: formData.title,
         description: formData.description,
@@ -107,7 +110,9 @@ export default function EditTaskDialog({ open, task, onClose, onSave }: EditTask
         priority: formData.priority,
         assignedTo: formData.assignedTo,
         assignedBy: formData.assignedBy,
+        assignedByRole: task.assignedByRole, // Keep original assignment role
         departmentId: formData.departmentId,
+        managerId: assignedUser?.managerId,
         dueDate: new Date(formData.dueDate),
         updatedAt: new Date(),
         meeting: meetingData.enabled ? {

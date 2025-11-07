@@ -14,7 +14,7 @@ interface EventsDisplayProps {
 
 export default function EventsDisplay({ 
   events, 
-  userRole = 'executive', 
+  userRole = 'member', 
   userDepartment = 'engineering',
   maxEvents = 5 
 }: EventsDisplayProps) {

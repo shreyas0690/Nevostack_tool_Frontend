@@ -57,6 +57,12 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Get the current user's role for task assignment tracking
+    const currentUserRole = mockUsers.find(u => u.id === currentUserId)?.role;
+    
+    // Find the assigned user to determine their manager
+    const assignedUser = mockUsers.find(u => u.id === formData.assignedTo);
+    
     onAdd({
       title: formData.title,
       description: formData.description,
@@ -64,7 +70,9 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
       priority: formData.priority,
       assignedTo: formData.assignedTo,
       assignedBy: currentUserId,
+      assignedByRole: currentUserRole,
       departmentId: formData.departmentId,
+      managerId: assignedUser?.managerId,
       dueDate: new Date(formData.dueDate),
       meeting: meetingData.enabled ? {
         enabled: true,

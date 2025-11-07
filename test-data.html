@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Mock Data</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .data-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Mock Data Test</h1>
+    
+    <div class="data-section">
+        <h2>Current User Data</h2>
+        <div id="userData">Loading...</div>
+    </div>
+    
+    <div class="data-section">
+        <h2>Profile Form Data</h2>
+        <div id="profileData">Loading...</div>
+    </div>
+    
+    <div class="data-section">
+        <h2>Workspace Data</h2>
+        <div id="workspaceData">Loading...</div>
+    </div>
+
+    <script>
+        // Mock the services
+        const mockUser = {
+            id: 'mock-user-123',
+            email: 'john.doe@example.com',
+            name: 'John Doe',
+            firstName: 'John',
+            lastName: 'Doe',
+            role: 'member',
+            companyId: 'mock-company-123',
+            avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+            status: 'active',
+            username: 'johndoe',
+            phone: '+1 (555) 123-4567',
+            mobileNumber: '+1 (555) 987-6543'
+        };
+
+        const mockWorkspace = {
+            id: 'mock-workspace-123',
+            name: 'Acme Corporation',
+            subdomain: 'acme',
+            domain: 'acme.com',
+            companyId: 'mock-company-123',
+            ownerId: 'mock-user-123',
+            plan: 'professional',
+            status: 'active',
+            limits: { maxUsers: 100 },
+            usage: { currentUsers: 25 },
+            settings: { timezone: 'America/New_York', language: 'en' }
+        };
+
+        // Display the data
+        document.getElementById('userData').innerHTML = `
+            <div class="success">
+                <h3>✅ User Data Loaded Successfully</h3>
+                <pre>${JSON.stringify(mockUser, null, 2)}</pre>
+            </div>
+        `;
+
+        const profileForm = {
+            firstName: mockUser.firstName || mockUser.name?.split(' ')[0] || '',
+            lastName: mockUser.lastName || mockUser.name?.split(' ').slice(1).join(' ') || '',
+            email: mockUser.email || '',
+            phone: mockUser.phone || '',
+            mobileNumber: mockUser.mobileNumber || '',
+            avatar: mockUser.avatar || ''
+        };
+
+        document.getElementById('profileData').innerHTML = `
+            <div class="success">
+                <h3>✅ Profile Form Data Generated</h3>
+                <pre>${JSON.stringify(profileForm, null, 2)}</pre>
+            </div>
+        `;
+
+        document.getElementById('workspaceData').innerHTML = `
+            <div class="success">
+                <h3>✅ Workspace Data Loaded Successfully</h3>
+                <pre>${JSON.stringify(mockWorkspace, null, 2)}</pre>
+            </div>
+        `;
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,39 @@
+{
+  "id": "1",
+  "name": "Test Company Pvt Ltd",
+  "email": "test@testcompany.com",
+  "phone": "+91 9876543210",
+  "address": {
+    "street": "123 Test Street",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "zipCode": "400001",
+    "country": "India"
+  },
+  "industry": "Technology",
+  "size": "medium",
+  "foundedYear": 2020,
+  "website": "https://testcompany.com",
+  "logo": "",
+  "description": "A leading technology company specializing in software development and digital solutions.",
+  "status": "active",
+  "subscription": {
+    "plan": "premium",
+    "startDate": "2024-01-01T00:00:00Z",
+    "endDate": "2024-12-31T23:59:59Z",
+    "features": ["user-management", "project-management", "task-management", "analytics"]
+  },
+  "settings": {
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "language": "en",
+    "theme": "light",
+    "notifications": {
+      "email": true,
+      "push": true,
+      "sms": false
+    }
+  },
+  "createdAt": "2024-01-01T00:00:00Z",
+  "updatedAt": "2024-01-15T10:30:00Z"
+}

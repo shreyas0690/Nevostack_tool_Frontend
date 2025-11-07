@@ -1,4 +1,4 @@
-export type LeaveType = 'annual' | 'sick' | 'maternity' | 'paternity' | 'emergency' | 'unpaid' | 'compensatory';
+export type LeaveType = 'annual' | 'sick' | 'casual' | 'maternity' | 'paternity' | 'emergency' | 'unpaid' | 'compensatory' | 'other';
 
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
@@ -48,9 +48,11 @@ export interface LeavePolicy {
 export const leaveTypeConfig = {
   annual: { label: 'Annual Leave', color: '#3B82F6', maxDays: 21 },
   sick: { label: 'Sick Leave', color: '#EF4444', maxDays: 10 },
+  casual: { label: 'Casual Leave', color: '#06B6D4', maxDays: 12 },
   maternity: { label: 'Maternity Leave', color: '#EC4899', maxDays: 90 },
   paternity: { label: 'Paternity Leave', color: '#8B5CF6', maxDays: 15 },
   emergency: { label: 'Emergency Leave', color: '#F59E0B', maxDays: 5 },
   unpaid: { label: 'Unpaid Leave', color: '#6B7280', maxDays: 30 },
   compensatory: { label: 'Compensatory Leave', color: '#10B981', maxDays: 12 },
+  other: { label: 'Other Leave', color: '#64748B', maxDays: 15 },
 };

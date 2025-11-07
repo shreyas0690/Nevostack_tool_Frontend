@@ -11,7 +11,7 @@ export interface Meeting {
   duration: number; // in minutes
   location: string;
   meetingLink?: string;
-  organizer: string;
+  organizer: string | any; // Can be string ID or object with user details
   attendees: string[];
   departments?: string[];
   status: MeetingStatus;

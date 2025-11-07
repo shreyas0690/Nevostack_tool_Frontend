@@ -1,0 +1,92 @@
+[
+  {
+    "id": "1",
+    "firstName": "Admin",
+    "lastName": "User",
+    "email": "admin@testcompany.com",
+    "role": "admin",
+    "department": "Management",
+    "position": "Administrator",
+    "avatar": "",
+    "status": "active",
+    "permissions": {
+      "canManageUsers": true,
+      "canManageProjects": true,
+      "canManageTasks": true,
+      "canViewReports": true,
+      "canManageSettings": true
+    },
+    "preferences": {
+      "theme": "light",
+      "language": "en",
+      "timezone": "UTC",
+      "notifications": {
+        "email": true,
+        "push": true,
+        "sms": false
+      }
+    },
+    "lastLogin": "2024-01-15T10:30:00Z",
+    "createdAt": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": "2",
+    "firstName": "John",
+    "lastName": "Manager",
+    "email": "john.manager@testcompany.com",
+    "role": "manager",
+    "department": "Development",
+    "position": "Project Manager",
+    "avatar": "",
+    "status": "active",
+    "permissions": {
+      "canManageUsers": false,
+      "canManageProjects": true,
+      "canManageTasks": true,
+      "canViewReports": true,
+      "canManageSettings": false
+    },
+    "preferences": {
+      "theme": "light",
+      "language": "en",
+      "timezone": "UTC",
+      "notifications": {
+        "email": true,
+        "push": true,
+        "sms": false
+      }
+    },
+    "lastLogin": "2024-01-15T09:15:00Z",
+    "createdAt": "2024-01-05T00:00:00Z"
+  },
+  {
+    "id": "3",
+    "firstName": "Sarah",
+    "lastName": "Developer",
+    "email": "sarah.dev@testcompany.com",
+    "role": "employee",
+    "department": "Development",
+    "position": "Senior Developer",
+    "avatar": "",
+    "status": "active",
+    "permissions": {
+      "canManageUsers": false,
+      "canManageProjects": false,
+      "canManageTasks": true,
+      "canViewReports": false,
+      "canManageSettings": false
+    },
+    "preferences": {
+      "theme": "dark",
+      "language": "en",
+      "timezone": "UTC",
+      "notifications": {
+        "email": true,
+        "push": false,
+        "sms": false
+      }
+    },
+    "lastLogin": "2024-01-15T08:45:00Z",
+    "createdAt": "2024-01-10T00:00:00Z"
+  }
+]
