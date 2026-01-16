@@ -20,6 +20,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { API_CONFIG } from '@/config/api';
+
+const API_BASE = API_CONFIG.BASE_URL;
 
 export default function MeetingsManagement() {
   const { currentUser } = useAuth();
@@ -68,11 +71,11 @@ export default function MeetingsManagement() {
         setLoading(true);
         console.log('Attempting to fetch meetings...');
         console.log('Current user:', currentUser);
-        console.log('API Base URL:', 'http://localhost:5000/api/meetings');
+        console.log('API Base URL:', `${API_BASE}/api/meetings`);
 
         // Test direct API call first
         try {
-          const testResponse = await fetch('http://localhost:5000/api/meetings', {
+          const testResponse = await fetch(`${API_BASE}/api/meetings`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
               'Content-Type': 'application/json'

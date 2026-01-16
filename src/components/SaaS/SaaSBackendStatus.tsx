@@ -3,6 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle, XCircle, RefreshCw, Server, Loader2 } from 'lucide-react';
+import { API_CONFIG } from '@/config/api';
+
+const API_BASE = API_CONFIG.BASE_URL;
 
 interface BackendStatusProps {
   onStatusChange?: (isOnline: boolean) => void;
@@ -16,10 +19,10 @@ export default function SaaSBackendStatus({ onStatusChange }: BackendStatusProps
   const checkBackendStatus = async () => {
     setIsChecking(true);
     setError(null);
-    
+
     try {
       // Test with a working endpoint that doesn't require auth
-      const response = await fetch('http://localhost:5000/api/users', {
+      const response = await fetch(`${API_BASE}/api/users`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -86,13 +89,13 @@ export default function SaaSBackendStatus({ onStatusChange }: BackendStatusProps
                 Backend server is not running or not accessible.
               </AlertDescription>
             </Alert>
-            
+
             {error && (
               <div className="text-sm text-muted-foreground">
                 <strong>Error:</strong> {error}
               </div>
             )}
-            
+
             <div className="text-sm text-muted-foreground">
               <p><strong>To fix this issue:</strong></p>
               <ol className="list-decimal list-inside mt-2 space-y-1">
@@ -103,9 +106,9 @@ export default function SaaSBackendStatus({ onStatusChange }: BackendStatusProps
                 <li>Refresh this page</li>
               </ol>
             </div>
-            
-            <Button 
-              onClick={checkBackendStatus} 
+
+            <Button
+              onClick={checkBackendStatus}
               disabled={isChecking}
               variant="outline"
               size="sm"

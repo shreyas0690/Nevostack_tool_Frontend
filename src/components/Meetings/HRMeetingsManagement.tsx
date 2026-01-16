@@ -14,6 +14,9 @@ import MeetingsList from './MeetingsList';
 import MeetingsCalendar from './MeetingsCalendar';
 import MeetingStats from './MeetingStats';
 import { CreateMeetingDialog } from './index';
+import { API_CONFIG } from '@/config/api';
+
+const API_BASE = API_CONFIG.BASE_URL;
 
 export default function HRMeetingsManagement() {
   const { currentUser } = useAuth();
@@ -36,11 +39,11 @@ export default function HRMeetingsManagement() {
         setLoading(true);
         console.log('HR Meetings: Attempting to fetch meetings...');
         console.log('HR Meetings: Current user:', currentUser);
-        console.log('HR Meetings: API Base URL:', 'http://localhost:5000/api/meetings');
-        
+        console.log('HR Meetings: API Base URL:', `${API_BASE}/api/meetings`);
+
         // Test direct API call first
         try {
-          const testResponse = await fetch('http://localhost:5000/api/meetings', {
+          const testResponse = await fetch(`${API_BASE}/api/meetings`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
               'Content-Type': 'application/json'
@@ -55,12 +58,12 @@ export default function HRMeetingsManagement() {
         } catch (directError) {
           console.error('HR Meetings: Direct API test failed:', directError);
         }
-        
+
         const response = await meetingService.getMeetings();
         console.log('HR Meetings: Fetched meetings response:', response);
         console.log('HR Meetings: Response success:', response?.success);
         console.log('HR Meetings: Response data:', response?.data);
-        
+
         if (response && response.success && (response.data || (response as any).meetings)) {
           // Support both paginated (`data`) and legacy (`meetings`) response shapes
           const meetingsArray = response.data ?? (response as any).meetings;
@@ -71,7 +74,7 @@ export default function HRMeetingsManagement() {
             description: meeting.description || '',
             type: 'department' as const, // Default type
             date: new Date(meeting.startTime),
-            duration: meeting.endTime ? 
+            duration: meeting.endTime ?
               Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : 60,
             location: meeting.location || '',
             meetingLink: meeting.meetingLink,
@@ -86,7 +89,7 @@ export default function HRMeetingsManagement() {
             createdAt: new Date(meeting.createdAt || Date.now()),
             updatedAt: new Date(meeting.updatedAt || Date.now())
           }));
-          
+
           setMeetings(transformedMeetings);
         } else {
           console.warn('HR Meetings: Invalid response format:', response);
@@ -127,13 +130,13 @@ export default function HRMeetingsManagement() {
 
   const filteredMeetings = meetings.filter(meeting => {
     if (!meeting) return false;
-    
+
     const title = meeting.title || '';
     const description = meeting.description || '';
     const query = searchQuery.toLowerCase();
-    
-    return title.toLowerCase().includes(query) || 
-           description.toLowerCase().includes(query);
+
+    return title.toLowerCase().includes(query) ||
+      description.toLowerCase().includes(query);
   });
 
   const refreshMeetings = async () => {
@@ -147,7 +150,7 @@ export default function HRMeetingsManagement() {
           description: meeting.description || '',
           type: 'department' as const,
           date: new Date(meeting.startTime),
-          duration: meeting.endTime ? 
+          duration: meeting.endTime ?
             Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : 60,
           location: meeting.location || '',
           meetingLink: meeting.meetingLink,

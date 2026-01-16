@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { API_CONFIG } from '@/config/api';
+
+const API_BASE = API_CONFIG.BASE_URL;
 
 function NotificationStatus() {
   const [status, setStatus] = useState({
@@ -26,7 +29,7 @@ function NotificationStatus() {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/api/notifications/unread-count', {
+      const response = await fetch(`${API_BASE}/api/notifications/unread-count`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -59,7 +62,7 @@ function NotificationStatus() {
   return (
     <div className="fixed bottom-4 right-4 bg-white border border-gray-300 rounded-lg p-3 shadow-lg text-xs max-w-xs">
       <div className="font-semibold mb-2">🔔 Notification Status</div>
-      
+
       <div className="space-y-1">
         <div className="flex justify-between">
           <span>Status:</span>
@@ -67,25 +70,25 @@ function NotificationStatus() {
             {status.apiConnected ? '✅ Connected' : '❌ Disconnected'}
           </span>
         </div>
-        
+
         <div className="flex justify-between">
           <span>Unread:</span>
           <span className="font-semibold">{status.unreadCount}</span>
         </div>
-        
+
         <div className="flex justify-between">
           <span>Last Check:</span>
           <span>{status.lastCheck}</span>
         </div>
-        
+
         {status.error && (
           <div className="text-red-600 text-xs mt-1">
             {status.error}
           </div>
         )}
       </div>
-      
-      <button 
+
+      <button
         onClick={checkStatus}
         className="w-full mt-2 bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
       >

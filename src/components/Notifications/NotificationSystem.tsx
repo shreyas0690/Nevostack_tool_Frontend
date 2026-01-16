@@ -12,7 +12,7 @@ interface NotificationSystemProps {
   className?: string;
 }
 
-export function NotificationSystem({ 
+export function NotificationSystem({
   showBell = true,
   showToasts = true,
   maxToasts = 3,
@@ -23,7 +23,7 @@ export function NotificationSystem({
   const { user, token } = useAuth(); // Get user and token from auth context
 
   const websocketConfig = {
-    url: process.env.REACT_APP_WEBSOCKET_URL || 'ws://localhost:5000',
+    url: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
     token: token || '',
     userId: user?.id || '',
     companyId: user?.companyId || '',
@@ -45,12 +45,12 @@ export function NotificationSystem({
     if (isConnected && user) {
       // Join user-specific room
       joinUserRoom(user.id);
-      
+
       // Join company room
       if (user.companyId) {
         joinCompanyRoom(user.companyId);
       }
-      
+
       // Join department room if user has a department
       if (user.departmentId) {
         joinDepartmentRoom(user.departmentId);
@@ -75,7 +75,7 @@ export function NotificationSystem({
         maxToasts={maxToasts}
         toastPosition={toastPosition}
       />
-      
+
       {/* WebSocket connection status indicator (optional) */}
       {process.env.NODE_ENV === 'development' && (
         <div className="fixed bottom-4 left-4 z-50">

@@ -1,4 +1,8 @@
 import { io, Socket } from 'socket.io-client';
+import { API_CONFIG } from '@/config/api';
+
+// Note: WebSocket may not work in serverless environments like Vercel
+const WS_URL = API_CONFIG.BASE_URL;
 
 class WebSocketService {
   private socket: Socket | null = null;
@@ -18,7 +22,7 @@ class WebSocketService {
       tokenStart: token ? token.substring(0, 20) + '...' : 'none'
     });
 
-    this.socket = io('http://localhost:5000', {
+    this.socket = io(WS_URL, {
       auth: {
         token: token
       },

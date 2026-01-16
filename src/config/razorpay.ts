@@ -1,3 +1,5 @@
+import { API_CONFIG } from './api';
+
 export const razorpayConfig = {
   key_id: 'rzp_test_ROI2vufvWZljYC',
   company_name: 'Nevostack',
@@ -8,7 +10,7 @@ export const razorpayConfig = {
 };
 
 export const apiConfig = {
-  baseUrl: 'http://localhost:5000',
+  baseUrl: API_CONFIG.BASE_URL,
   endpoints: {
     createPaymentOrder: '/api/company/create-payment-order',
     verifyPayment: '/api/company/verify-payment',

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, BellRing } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { API_CONFIG } from '@/config/api';
+
+const API_BASE = API_CONFIG.BASE_URL;
 
 function SimpleNotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
@@ -13,7 +16,7 @@ function SimpleNotificationBell() {
       const token = localStorage.getItem('accessToken');
       if (!token) return;
 
-      const response = await fetch('http://localhost:5000/api/notifications/unread-count', {
+      const response = await fetch(`${API_BASE}/api/notifications/unread-count`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -40,7 +43,7 @@ function SimpleNotificationBell() {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/api/notifications?unreadOnly=true', {
+      const response = await fetch(`${API_BASE}/api/notifications?unreadOnly=true`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -103,7 +106,7 @@ function SimpleNotificationBell() {
       const token = localStorage.getItem('accessToken');
       if (!token) return;
 
-      await fetch(`http://localhost:5000/api/notifications/${notificationId}/read`, {
+      await fetch(`${API_BASE}/api/notifications/${notificationId}/read`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`
