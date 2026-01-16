@@ -23,7 +23,7 @@ export function NotificationSystem({
   const { user, token } = useAuth(); // Get user and token from auth context
 
   const websocketConfig = {
-    url: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
+    url: API_CONFIG.BASE_URL,
     token: token || '',
     userId: user?.id || '',
     companyId: user?.companyId || '',

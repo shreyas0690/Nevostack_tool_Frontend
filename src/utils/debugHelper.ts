@@ -10,11 +10,15 @@ export function debugAuthState() {
   console.log('========================');
 }
 
+import { API_CONFIG } from '@/config/api';
+
+const API_BASE = API_CONFIG.BASE_URL;
+
 export async function testLoginAndCheckDepartment(email: string, password: string) {
   console.log('=== TESTING LOGIN AND DEPARTMENT RESPONSE ===');
-  
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-  
+
+  const baseURL = API_BASE;
+
   try {
     const response = await fetch(`${baseURL}/api/auth/login`, {
       method: 'POST',
@@ -23,13 +27,13 @@ export async function testLoginAndCheckDepartment(email: string, password: strin
       },
       body: JSON.stringify({ email, password })
     });
-    
+
     console.log('Login Response status:', response.status);
-    
+
     if (response.ok) {
       const data = await response.json();
       console.log('Full Login Response:', data);
-      
+
       if (data.user) {
         console.log('User Data:', data.user);
         console.log('Department ID from response:', data.user.departmentId);
@@ -41,7 +45,7 @@ export async function testLoginAndCheckDepartment(email: string, password: strin
           deptId: data.user.deptId
         });
       }
-      
+
       return { success: true, data };
     } else {
       const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
@@ -56,13 +60,13 @@ export async function testLoginAndCheckDepartment(email: string, password: strin
 
 export async function testDepartmentsAPI() {
   console.log('=== TESTING DEPARTMENTS API ===');
-  
+
   const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
-  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-  
+  const baseURL = API_BASE;
+
   console.log('Base URL:', baseURL);
   console.log('Token:', token ? `${token.substring(0, 10)}...` : 'No token');
-  
+
   try {
     const response = await fetch(`${baseURL}/api/departments`, {
       headers: {
@@ -70,10 +74,10 @@ export async function testDepartmentsAPI() {
         'Content-Type': 'application/json'
       }
     });
-    
+
     console.log('Response status:', response.status);
     console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-    
+
     if (response.ok) {
       const data = await response.json();
       console.log('Response data:', data);
@@ -99,12 +103,12 @@ export function setupTestHODData() {
     departmentId: 'test_dept_001', // Add test department ID
     createdAt: new Date().toISOString()
   };
-  
+
   localStorage.setItem('nevostack_auth', 'true');
   localStorage.setItem('nevostack_user', JSON.stringify(testUser));
   localStorage.setItem('user', JSON.stringify(testUser));
   localStorage.setItem('accessToken', 'test_token_for_development');
-  
+
   console.log('Test HOD data setup:', testUser);
   return testUser;
 }
@@ -116,7 +120,7 @@ if (import.meta.env.DEV) {
   (window as any).testDepartmentsAPI = testDepartmentsAPI;
   (window as any).testLogin = testLoginAndCheckDepartment;
   (window as any).setupTestHOD = setupTestHODData;
-  
+
   console.log('Debug helpers available:');
   console.log('- debugAuth() - Check auth state');
   console.log('- testDepartmentsAPI() - Test departments API');

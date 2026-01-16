@@ -1,10 +1,8 @@
 // API Configuration
 export const API_CONFIG = {
   // Base URL for the backend API
-  BASE_URL: import.meta.env.DEV
-    ? 'http://localhost:5000'
-    : (import.meta.env.VITE_API_BASE_URL || 'https://api.nevostack.com'),
-  
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000' : 'https://api.nevostack.com'),
+
   // API Endpoints
   ENDPOINTS: {
     // Authentication
@@ -17,7 +15,7 @@ export const API_CONFIG = {
       REGISTER: '/api/auth/register',
       REGISTER_COMPANY: '/api/auth/register-company'
     },
-    
+
     // Users
     USERS: {
       BASE: '/api/users',
@@ -29,7 +27,7 @@ export const API_CONFIG = {
       EXCHANGE_HOD: '/api/users/exchange-hod',
       EXCHANGE_MANAGER: '/api/users/exchange-manager'
     },
-    
+
     // Departments
     DEPARTMENTS: {
       BASE: '/api/departments',
@@ -37,7 +35,7 @@ export const API_CONFIG = {
       EMPLOYEES: (id: string) => `/api/departments/${id}/employees`,
       STATS: '/api/departments/stats'
     },
-    
+
     // Tasks
     TASKS: {
       BASE: '/api/tasks',
@@ -48,7 +46,7 @@ export const API_CONFIG = {
       ATTACHMENTS: (id: string) => `/api/tasks/${id}/attachments`,
       STATS: '/api/tasks/stats'
     },
-    
+
     // Attendance
     ATTENDANCE: {
       BASE: '/api/attendance',
@@ -58,7 +56,7 @@ export const API_CONFIG = {
       STATS: '/api/attendance/stats',
       REPORTS: '/api/attendance/reports'
     },
-    
+
     // Leave Management
     LEAVES: {
       BASE: '/api/leaves',
@@ -87,7 +85,7 @@ export const API_CONFIG = {
         ANALYTICS: '/api/analytics/hod/analytics'
       }
     },
-    
+
     // Meetings
     MEETINGS: {
       BASE: '/api/meetings',
@@ -96,7 +94,7 @@ export const API_CONFIG = {
       PARTICIPANTS: (id: string) => `/api/meetings/${id}/participants`,
       STATS: '/api/meetings/stats'
     },
-    
+
     // Events
     EVENTS: {
       BASE: '/api/events',
@@ -104,7 +102,7 @@ export const API_CONFIG = {
       RSVP: (id: string) => `/api/events/${id}/rsvp`,
       STATS: '/api/events/stats'
     },
-    
+
     // Notifications
     NOTIFICATIONS: {
       BASE: '/api/notifications',
@@ -113,7 +111,7 @@ export const API_CONFIG = {
       READ_ALL: '/api/notifications/read-all',
       MARK_ALL_READ: '/api/notifications/mark-all-read'
     },
-    
+
     // Device Management
     DEVICES: {
       BASE: '/api/devices',
@@ -122,8 +120,8 @@ export const API_CONFIG = {
       TRUST: '/api/devices/trust',
       REVOKE: '/api/devices/revoke'
     },
-    
-    
+
+
     // File Upload
     FILES: {
       UPLOAD: '/api/files/upload',
@@ -131,7 +129,7 @@ export const API_CONFIG = {
       DOCUMENTS: '/api/files/documents',
       EXPORTS: '/api/files/exports'
     },
-    
+
 
     // Workspaces
     WORKSPACES: {
@@ -222,16 +220,16 @@ export const API_CONFIG = {
       CHANGE_USERNAME: '/api/saas/change-username'
     }
   },
-  
+
   // Request Configuration
   DEFAULT_HEADERS: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   },
-  
+
   // Timeout settings
   TIMEOUT: 30000, // 30 seconds
-  
+
   // Retry configuration
   RETRY: {
     attempts: 3,
