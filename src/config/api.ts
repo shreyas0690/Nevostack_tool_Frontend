@@ -1,18 +1,29 @@
 // API Configuration
 export const API_CONFIG = {
   // Base URL for the backend API
+  // Base URL for the backend API
   BASE_URL: (() => {
+    // Version Check
+    console.log('🚀 App Version: 1.0.2 - Vercel URL Fix with Debug Logs');
+
     // 1. Prefer Environment Variable if available
-    if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+    if (import.meta.env.VITE_API_BASE_URL) {
+      console.log('✅ Using VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
+      return import.meta.env.VITE_API_BASE_URL;
+    }
 
     // 2. Check if running on localhost
     const isLocalhost =
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-    if (isLocalhost) return 'http://localhost:5000';
+    if (isLocalhost) {
+      console.log('⚠️ Running on Localhost - Using http://localhost:5000');
+      return 'http://localhost:5000';
+    }
 
     // 3. Fallback to production URL (hardcoded to ensure it works on Vercel)
+    console.log('🌍 Running on Production (Fallback) - Using https://nevostack-tool-backend-c717.vercel.app');
     return 'https://nevostack-tool-backend-c717.vercel.app';
   })(),
 
