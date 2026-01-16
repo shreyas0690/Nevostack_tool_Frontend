@@ -201,7 +201,10 @@ class SaaSAuthService {
   async authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = this.getAccessToken();
 
-    console.log('🔍 SaaS Authenticated Fetch - URL:', url);
+    // Ensure we use the full URL including backend base
+    const fullUrl = url.startsWith('http') ? url : `${this.baseURL}${url}`;
+
+    console.log('🔍 SaaS Authenticated Fetch - URL:', fullUrl);
     console.log('🔍 SaaS Authenticated Fetch - Token available:', !!token);
     console.log('🔍 SaaS Authenticated Fetch - Token preview:', token?.substring(0, 20) + '...');
 
@@ -217,7 +220,7 @@ class SaaSAuthService {
 
     console.log('🔍 SaaS Authenticated Fetch - Headers:', { ...headers, 'Authorization': `Bearer ${token.substring(0, 20)}...` });
 
-    const response = await fetch(url, {
+    const response = await fetch(fullUrl, {
       ...options,
       headers
     });
@@ -228,7 +231,7 @@ class SaaSAuthService {
         await this.refreshToken();
         const newToken = this.getAccessToken();
 
-        return fetch(url, {
+        return fetch(fullUrl, {
           ...options,
           headers: {
             ...options.headers,
