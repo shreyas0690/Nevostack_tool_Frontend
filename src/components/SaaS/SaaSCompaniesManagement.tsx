@@ -302,8 +302,13 @@ export default function SaaSCompaniesManagement() {
       const matchesSearch = ((company.companyName || '').toString()).toLowerCase().includes(searchTerm.toLowerCase()) ||
                           ((company.email || '').toString()).toLowerCase().includes(searchTerm.toLowerCase()) ||
                           ((company.domain || '').toString()).toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || company.status === statusFilter;
-      const matchesPlan = planFilter === 'all' || (company.subscriptionPlan === planFilter);
+    const matchesStatus = statusFilter === 'all' || company.status === statusFilter;
+      const planRaw = (company.subscriptionPlan || company.subscription?.plan || '').toString().toLowerCase();
+      const matchesPlan = planFilter === 'all' || planRaw.includes(planFilter.toLowerCase()) || (
+        planFilter === 'professional' && planRaw.includes('pro')
+      ) || (
+        planFilter === 'starter' && planRaw.includes('basic')
+      );
       
       return matchesSearch && matchesStatus && matchesPlan;
     });
@@ -312,8 +317,11 @@ export default function SaaSCompaniesManagement() {
   }, [searchTerm, statusFilter, planFilter, companies]);
 
   // Pagination - Use companies directly since API handles pagination
-  const totalPages = Math.ceil(totalCompanies / itemsPerPage);
-  const paginatedCompanies = companies; // API already returns paginated data
+  const isClientFilterActive = !!(searchTerm || statusFilter !== 'all' || planFilter !== 'all');
+  const totalForView = isClientFilterActive ? filteredCompanies.length : totalCompanies;
+  const totalPages = Math.ceil(totalForView / itemsPerPage) || 1;
+  // Use server pagination, but still apply local filter view when present to respect search/plan/status mismatch
+  const paginatedCompanies = isClientFilterActive ? filteredCompanies : companies;
 
   const handleEditCompany = (company: Company) => {
     setSelectedCompany(company);
@@ -669,18 +677,20 @@ export default function SaaSCompaniesManagement() {
             </div>
             
             <div className="flex flex-col sm:flex-row gap-3">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-40 h-10 border-gray-300 text-sm">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
+      <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <SelectTrigger className="w-full sm:w-40 h-10 border-gray-300 text-sm">
+          <SelectValue placeholder="Status" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Status</SelectItem>
+          <SelectItem value="active">Active</SelectItem>
+          <SelectItem value="pending">Pending</SelectItem>
+          <SelectItem value="suspended">Suspended</SelectItem>
+          <SelectItem value="trial">Trial</SelectItem>
+          <SelectItem value="cancelled">Cancelled</SelectItem>
+          <SelectItem value="inactive">Inactive</SelectItem>
+        </SelectContent>
+      </Select>
               
               <Select value={planFilter} onValueChange={setPlanFilter}>
                 <SelectTrigger className="w-full sm:w-32 h-10 border-gray-300 text-sm">
@@ -688,8 +698,9 @@ export default function SaaSCompaniesManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Plans</SelectItem>
-                  <SelectItem value="basic">Basic</SelectItem>
-                  <SelectItem value="pro">Pro</SelectItem>
+                  <SelectItem value="free">Free</SelectItem>
+                  <SelectItem value="starter">Starter</SelectItem>
+                  <SelectItem value="professional">Professional</SelectItem>
                   <SelectItem value="enterprise">Enterprise</SelectItem>
                 </SelectContent>
               </Select>
@@ -759,7 +770,7 @@ export default function SaaSCompaniesManagement() {
             {/* Mobile Card View */}
         <div className="lg:hidden space-y-4 p-4">
           {(paginatedCompanies || []).map((company, index) => (
-            <Card key={company._id} className="p-4">
+            <Card key={company._id || company.id || company.companyName || index} className="p-4">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center">
                   <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
@@ -924,8 +935,8 @@ export default function SaaSCompaniesManagement() {
             </TableHeader>
             
             <TableBody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {(paginatedCompanies || []).map((company, index) => (
-                <TableRow key={company._id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+          {(paginatedCompanies || []).map((company, index) => (
+            <TableRow key={company._id || company.id || company.companyName || index} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                   {/* SL Number */}
                   <TableCell className="py-4 px-4 text-center">
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100">

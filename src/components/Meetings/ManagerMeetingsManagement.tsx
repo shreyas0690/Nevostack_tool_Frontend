@@ -66,13 +66,99 @@ export default function ManagerMeetingsManagement() {
     status: 'scheduled' as MeetingStatus
   });
 
+  const toId = (value: any) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') return String(value._id || value.id || value.email || '');
+    return String(value);
+  };
+
+  const normalizeMeeting = (meeting: any): (Meeting & { organizerRole?: string }) => {
+    const deptIds = new Set<string>();
+    const addDepartment = (dept: any) => {
+      const id = toId(dept);
+      if (id) deptIds.add(id);
+    };
+
+    if (Array.isArray(meeting.departmentIds)) meeting.departmentIds.forEach(addDepartment);
+    if (meeting.departmentId) addDepartment(meeting.departmentId);
+    if (Array.isArray(meeting.departments)) meeting.departments.forEach(addDepartment);
+    if (meeting.department) addDepartment(meeting.department);
+
+    const attendeeIds = new Set<string>();
+    const addAttendee = (user: any) => {
+      const id = toId(user);
+      if (id) attendeeIds.add(id);
+    };
+
+    if (Array.isArray(meeting.participants)) {
+      meeting.participants.forEach((p: any) => addAttendee(p.user || p));
+    }
+    if (Array.isArray(meeting.inviteeUserIds)) {
+      meeting.inviteeUserIds.forEach(addAttendee);
+    }
+    if (Array.isArray(meeting.attendees)) {
+      meeting.attendees.forEach(addAttendee);
+    }
+
+    const startRaw = meeting.startTime || meeting.start || meeting.date;
+    const startDate = startRaw ? new Date(startRaw) : null;
+    const startValid = !!startDate && !isNaN(startDate.getTime());
+    const endRaw = meeting.endTime || meeting.end;
+    const endDate = endRaw ? new Date(endRaw) : null;
+    const endValid = !!endDate && !isNaN(endDate.getTime());
+    const durationFromRange = startValid && endValid
+      ? Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60))
+      : null;
+    const duration = meeting.duration ?? durationFromRange ?? 60;
+    const dateCandidate = startValid ? startDate : (meeting.date ? new Date(meeting.date) : null);
+    const date = dateCandidate && !isNaN(dateCandidate.getTime()) ? dateCandidate : new Date();
+
+    const locationText = meeting.location?.physical?.room
+      ?? meeting.location?.physical?.address
+      ?? meeting.location?.virtual?.meetingUrl
+      ?? (typeof meeting.location === 'string' ? meeting.location : '');
+    const meetingLink = meeting.meetingLink || meeting.location?.virtual?.meetingUrl || '';
+
+    const normalized: Meeting & { organizerRole?: string } = {
+      id: toId(meeting.id || meeting._id),
+      title: meeting.title || meeting.name || 'Untitled Meeting',
+      description: meeting.description || '',
+      type: meeting.type || 'team',
+      date,
+      duration,
+      location: locationText || '',
+      meetingLink: meetingLink || undefined,
+      organizer: meeting.organizer || meeting.organizerId || meeting.createdBy || '',
+      attendees: Array.from(attendeeIds),
+      departments: Array.from(deptIds),
+      status: meeting.status || 'scheduled',
+      priority: meeting.priority,
+      createdAt: meeting.createdAt ? new Date(meeting.createdAt) : new Date(),
+      updatedAt: meeting.updatedAt ? new Date(meeting.updatedAt) : new Date()
+    };
+    normalized.organizerRole = meeting.organizerRole || meeting.organizer?.role || null;
+    return normalized;
+  };
+
+  const getDepartmentId = (department: any) => {
+    if (!department) return '';
+    if (typeof department === 'string') return department;
+    if (typeof department === 'object') return String(department._id || department.id || '');
+    return '';
+  };
+
   // Fetch team members from backend
   useEffect(() => {
     const fetchTeamMembers = async () => {
       try {
         const response = await getTeamMembers();
         if (response && response.success && response.data) {
-          setTeamMembers(response.data);
+          const data = response.data as any;
+          const members = Array.isArray(data)
+            ? data
+            : (Array.isArray(data?.teamMembers) ? data.teamMembers : []);
+          setTeamMembers(members);
         } else {
           setTeamMembers([]);
         }
@@ -96,65 +182,9 @@ export default function ManagerMeetingsManagement() {
         const response = await meetingService.getMeetings();
         if (response && response.success && (response.data || (response as any).meetings)) {
           const meetingsArray = response.data ?? (response as any).meetings;
-          
-          console.log('ManagerMeetingsManagement: Raw meeting data from backend:', meetingsArray.map((m: any) => ({
-            id: m.id,
-            title: m.title,
-            organizer: m.organizer,
-            organizerType: typeof m.organizer,
-            organizerRole: m.organizerRole
-          })));
-          
-          const transformed = meetingsArray.map((meeting: any) => {
-            const toId = (v: any) => {
-              if (!v && v !== 0) return '';
-              if (typeof v === 'string') return v;
-              if (typeof v === 'object') return String(v._id || v.id || v);
-              return String(v);
-            };
-
-            const deptIds: string[] = [];
-            if (Array.isArray(meeting.departments) && meeting.departments.length > 0) {
-              meeting.departments.forEach((d: any) => {
-                const id = toId(d);
-                if (id) deptIds.push(id);
-              });
-            } else if (meeting.department) {
-              const id = toId(meeting.department);
-              if (id) deptIds.push(id);
-            }
-
-            const attendeesIds: string[] = [];
-            if (Array.isArray(meeting.participants) && meeting.participants.length > 0) {
-              meeting.participants.forEach((p: any) => {
-                const user = p.user || p;
-                const id = toId(user);
-                if (id) attendeesIds.push(id);
-              });
-            } else if (Array.isArray(meeting.inviteeUserIds)) {
-              meeting.inviteeUserIds.forEach((u: any) => {
-                const id = toId(u);
-                if (id) attendeesIds.push(id);
-              });
-            }
-
-            return {
-              id: toId(meeting.id || meeting._id),
-              title: meeting.title || meeting.name || 'Untitled Meeting',
-              description: meeting.description || '',
-              type: meeting.type || 'team',
-              date: meeting.startTime ? new Date(meeting.startTime) : (meeting.date ? new Date(meeting.date) : new Date()),
-              duration: meeting.endTime ? Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : (meeting.duration || 60),
-              location: meeting.location?.physical?.room ?? meeting.location?.virtual?.meetingUrl ?? (typeof meeting.location === 'string' ? meeting.location : ''),
-              meetingLink: meeting.meetingLink,
-              organizer: meeting.organizer, // Preserve the full organizer object with role information
-              attendees: attendeesIds,
-              departments: deptIds,
-              status: meeting.status || 'scheduled',
-              createdAt: meeting.createdAt ? new Date(meeting.createdAt) : new Date(),
-              updatedAt: meeting.updatedAt ? new Date(meeting.updatedAt) : new Date()
-            } as Meeting;
-          });
+          const transformed = Array.isArray(meetingsArray)
+            ? meetingsArray.map(normalizeMeeting)
+            : [];
 
           if (mounted) setMeetings(transformed);
         } else {
@@ -193,18 +223,37 @@ export default function ManagerMeetingsManagement() {
 
   // Helper function to get organizer ID from organizer field (can be string or object)
   const getOrganizerId = (organizer: any) => {
-    if (!organizer) return '';
-    if (typeof organizer === 'string') return organizer;
-    if (typeof organizer === 'object') return organizer.id || organizer._id || '';
-    return '';
+    return toId(organizer);
+  };
+
+  const teamDepartmentIds = new Set<string>();
+  if (currentUser?.departmentId) {
+    teamDepartmentIds.add(String(currentUser.departmentId));
+  }
+  teamMembers.forEach((member) => {
+    const deptId = getDepartmentId(member.departmentId);
+    if (deptId) teamDepartmentIds.add(String(deptId));
+  });
+
+  const isMeetingForTeam = (meeting: Meeting) => {
+    const organizerKey = getOrganizerId(meeting.organizer);
+    const currentUserKeys = [currentUser?.id, currentUser?.email, currentUser?.name]
+      .filter(Boolean)
+      .map((value) => String(value));
+
+    const isOrganizer = organizerKey ? currentUserKeys.includes(String(organizerKey)) : false;
+    const isAttendee = (meeting.attendees || []).some((id) => {
+      const idStr = String(id);
+      if (currentUserKeys.includes(idStr)) return true;
+      return teamMembers.some((member) => String(member._id || member.id) === idStr);
+    });
+    const isDepartmentMeeting = (meeting.departments || []).some((deptId) => teamDepartmentIds.has(String(deptId)));
+
+    return isOrganizer || isAttendee || isDepartmentMeeting;
   };
 
   // Get team meetings (meetings involving manager and team)
-  const teamMeetings = meetings.filter(m =>
-    getOrganizerId(m.organizer) === currentUser?.id ||
-    getOrganizerId(m.organizer) === currentUser?.email ||
-    m.attendees?.some(id => teamMembers.find(member => member._id === id || member.id === id) || id === currentUser?.id)
-  );
+  const teamMeetings = meetings.filter(isMeetingForTeam);
 
   // Filter meetings based on search and status
   const filteredMeetings = teamMeetings.filter(meeting => {
@@ -427,57 +476,28 @@ export default function ManagerMeetingsManagement() {
   };
 
   const getOrganizerRole = (meeting: any) => {
-    console.log('getOrganizerRole called with:', {
-      organizer: meeting.organizer,
-      type: typeof meeting.organizer,
-      organizerRole: (meeting as any).organizerRole,
-      teamMembersCount: teamMembers.length,
-      currentUserRole: currentUser?.role
-    });
-    
-    // If organizer is an object with role
     if (meeting.organizer && typeof meeting.organizer === 'object' && meeting.organizer.role) {
-      console.log('Found role in organizer object:', meeting.organizer.role);
       return meeting.organizer.role;
     }
-    
-    // Fallback: try to get role from organizerRole field
+
     if ((meeting as any).organizerRole) {
-      console.log('Found role in organizerRole field:', (meeting as any).organizerRole);
       return (meeting as any).organizerRole;
     }
-    
-    // If organizer is a string, try to find role
+
     if (typeof meeting.organizer === 'string') {
-      console.log('Organizer is string:', meeting.organizer);
-      
-      // If it's a MongoDB ObjectId, try to find in team members
       if (meeting.organizer.match(/^[0-9a-f]{24}$/i)) {
-        console.log('Organizer is MongoDB ObjectId, searching team members...');
         const teamMember = teamMembers.find(member => 
           member._id === meeting.organizer || 
           member.id === meeting.organizer
         );
         if (teamMember && teamMember.role) {
-          console.log('Found team member by ID:', teamMember.role);
           return teamMember.role;
         }
-        
-        // Check if it's current user
+
         if (meeting.organizer === currentUser?.id && currentUser?.role) {
-          console.log('Found current user by ID:', currentUser.role);
           return currentUser.role;
         }
       } else {
-        // If it's a name string, try to find in team members by name
-        console.log('Organizer is name string, searching team members by name...');
-        console.log('Available team members:', teamMembers.map(m => ({ 
-          name: m.name, 
-          firstName: m.firstName, 
-          lastName: m.lastName, 
-          role: m.role 
-        })));
-        
         const teamMember = teamMembers.find(member => {
           const memberName = `${member.firstName} ${member.lastName}`.trim();
           const memberFullName = member.name || member.fullName;
@@ -486,24 +506,20 @@ export default function ManagerMeetingsManagement() {
                  member.firstName === meeting.organizer ||
                  member.lastName === meeting.organizer;
         });
-        
+
         if (teamMember && teamMember.role) {
-          console.log('Found team member by name:', teamMember.role);
           return teamMember.role;
         }
-        
-        // Check if it matches current user name
+
         if (currentUser && (
           currentUser.name === meeting.organizer ||
           `${currentUser.firstName} ${currentUser.lastName}`.trim() === meeting.organizer
         ) && currentUser.role) {
-          console.log('Found current user by name:', currentUser.role);
           return currentUser.role;
         }
       }
     }
-    
-    console.log('No role found for organizer:', meeting.organizer);
+
     return null;
   };
 
@@ -757,17 +773,6 @@ export default function ManagerMeetingsManagement() {
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <p className="text-muted-foreground">{getUserName(meeting.organizer)}</p>
                                     {(() => {
-                                      console.log('Organizer Debug:', {
-                                        organizer: meeting.organizer,
-                                        type: typeof meeting.organizer,
-                                        hasRole: meeting.organizer?.role,
-                                        role: meeting.organizer?.role,
-                                        organizerRole: (meeting as any).organizerRole,
-                                        meetingId: meeting.id
-                                      });
-                                      return null;
-                                    })()}
-                                    {(() => {
                                       const role = getOrganizerRole(meeting);
                                       if (role) {
                                         return (
@@ -796,12 +801,7 @@ export default function ManagerMeetingsManagement() {
                               </div>
                             )}
 
-                            {(meeting.meetingLink && (
-                              // Show link if current user is the organizer (created the meeting)
-                              isCurrentUserOrganizer(meeting) ||
-                              // OR if current user is invited to the meeting
-                              (meeting.attendees?.includes(currentUser?.id) || meeting.attendees?.includes(currentUser?.name))
-                            )) && (
+                            {meeting.meetingLink && isMeetingForTeam(meeting) && (
                               <div className="flex items-center gap-2 mt-2">
                                 <ExternalLink className="h-4 w-4 text-muted-foreground" />
                                 <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer" 
@@ -931,12 +931,7 @@ export default function ManagerMeetingsManagement() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {(meeting.meetingLink && (
-                          // Show link if current user is the organizer (created the meeting)
-                          isCurrentUserOrganizer(meeting) ||
-                          // OR if current user is invited to the meeting
-                          (meeting.attendees?.includes(currentUser?.id) || meeting.attendees?.includes(currentUser?.name))
-                        )) && (
+                        {meeting.meetingLink && isMeetingForTeam(meeting) && (
                           <Button variant="outline" size="sm" asChild>
                             <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
                               <ExternalLink className="w-4 h-4 mr-2" />
@@ -1084,8 +1079,8 @@ export default function ManagerMeetingsManagement() {
         onOpenChange={setShowScheduleDialog}
         onCreated={(m) => {
           const created = m.data || m.meeting || m;
-          const id = created.id || created._id;
-          setMeetings(prev => [...prev, { ...(created), id } as any]);
+          const normalized = normalizeMeeting(created);
+          setMeetings(prev => [...prev, normalized]);
         }}
       />
 
@@ -1095,8 +1090,8 @@ export default function ManagerMeetingsManagement() {
         meetingToEdit={selectedMeeting}
         onUpdated={(updated) => {
           const u = updated.data || updated.meeting || updated;
-          const id = u.id || u._id;
-          setMeetings(prev => prev.map(meet => (meet.id === id ? (u as any) : meet)));
+          const normalized = normalizeMeeting(u);
+          setMeetings(prev => prev.map(meet => (meet.id === normalized.id ? normalized : meet)));
           setSelectedMeeting(null);
         }}
       />

@@ -168,15 +168,18 @@ export default function SaaSAllUsersManagement() {
 
       if (response.ok) {
         const data = await response.json();
+        const usersData = data?.data?.users || [];
+        const pagination = data?.data?.pagination || {};
+        const filters = data?.data?.filters || {};
 
-        console.log('📊 Users data received:', data.data.users.length, 'users');
-        console.log('🔍 Sample user data:', data.data.users[0]);
+        console.log('📊 Users data received:', usersData.length, 'users');
+        console.log('🔍 Sample user data:', usersData[0]);
 
-        setUsers(data.data.users);
-        setFilteredUsers(data.data.users);
-        setTotalUsers(data.data.pagination.totalUsers);
-        setTotalPages(data.data.pagination.totalPages);
-        setUniqueCompanies(data.data.filters.companies);
+        setUsers(usersData);
+        setFilteredUsers(usersData);
+        setTotalUsers(pagination.totalUsers || usersData.length || 0);
+        setTotalPages(pagination.totalPages || 1);
+        setUniqueCompanies(Array.isArray(filters.companies) ? filters.companies : []);
 
         // Extract stats data from the response
         if (data.data && data.data.stats) {
@@ -197,6 +200,11 @@ export default function SaaSAllUsersManagement() {
       setLoading(false);
     }
   };
+
+  // Reset to first page when filters/search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, roleFilter, statusFilter, companyFilter]);
 
 
   // Debounce search term to avoid too many API calls
@@ -661,12 +669,14 @@ export default function SaaSAllUsersManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="department_head">Department Head</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="member">Member</SelectItem>
                 <SelectItem value="hr">HR</SelectItem>
                 <SelectItem value="hr_manager">HR Manager</SelectItem>
+                <SelectItem value="person">Person</SelectItem>
               </SelectContent>
             </Select>
             

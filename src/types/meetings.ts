@@ -1,6 +1,7 @@
 
 export type MeetingStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
-export type MeetingType = 'department' | 'user';
+export type MeetingType = 'department' | 'user' | 'team' | 'physical' | 'virtual' | 'hybrid';
+export type MeetingPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface Meeting {
   id: string;
@@ -15,6 +16,7 @@ export interface Meeting {
   attendees: string[];
   departments?: string[];
   status: MeetingStatus;
+  priority?: MeetingPriority;
   createdAt: Date;
   updatedAt: Date;
 }

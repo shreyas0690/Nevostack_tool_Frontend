@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
+import {
   Video, Calendar, Clock, Users, MapPin, ExternalLink, Search, Eye, CheckCircle2, XCircle, PlayCircle, Timer, Crown, Shield, User
 } from 'lucide-react';
 import { meetingService, Meeting } from '@/services/meetingService';
@@ -68,8 +68,8 @@ export default function MemberMeetings() {
 
   // Filters
   const filteredMeetings = meetings.filter(m => {
-    const matchesSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         (m.description && m.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesSearch = m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (m.description && m.description.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesStatus = statusFilter === 'all' || m.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -109,7 +109,10 @@ export default function MemberMeetings() {
 
   const getRoleIcon = (role: string) => {
     switch (role) {
+      case 'super_admin': return <Crown className="h-3 w-3 text-red-500" />;
       case 'admin': return <Crown className="h-3 w-3 text-yellow-500" />;
+      case 'hr_manager': return <Shield className="h-3 w-3 text-purple-500" />;
+      case 'hr': return <Shield className="h-3 w-3 text-cyan-500" />;
       case 'department_head': return <Shield className="h-3 w-3 text-blue-500" />;
       case 'manager': return <Users className="h-3 w-3 text-green-500" />;
       case 'member': return <User className="h-3 w-3 text-gray-500" />;
@@ -117,11 +120,23 @@ export default function MemberMeetings() {
     }
   };
 
+  const getOrganizerRole = (meeting: Meeting) =>
+    meeting.organizerRole || meeting.organizer?.role || 'member';
+
+  const getOrganizerName = (organizer: Meeting['organizer'] | null) => {
+    if (!organizer) return 'Unknown Organizer';
+    const name = `${organizer.firstName || ''} ${organizer.lastName || ''}`.trim();
+    return name || organizer.email || 'Unknown Organizer';
+  };
+
+  const getMeetingLink = (meeting: Meeting) =>
+    meeting.meetingLink || meeting.location?.virtual?.meetingUrl;
+
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return {
       date: date.toLocaleDateString(),
-      time: date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
   };
 
@@ -187,6 +202,7 @@ export default function MemberMeetings() {
                       <SelectItem value="in_progress">In Progress</SelectItem>
                       <SelectItem value="completed">Completed</SelectItem>
                       <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="postponed">Postponed</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -204,9 +220,11 @@ export default function MemberMeetings() {
                     const dateTime = formatDateTime(meeting.startTime);
                     const isToday = new Date(meeting.startTime).toDateString() === new Date().toDateString();
                     const isUpcoming = new Date(meeting.startTime) > new Date();
-                    
+                    const organizerRole = getOrganizerRole(meeting);
+                    const meetingLink = getMeetingLink(meeting);
+
                     return (
-                      <Card key={meeting.id} className={`border-2 transition-all hover:shadow-md ${isToday ? 'border-blue-200 bg-blue-50/50' : ''}`}>
+                      <Card key={meeting.id || (meeting as any)._id} className={`border-2 transition-all hover:shadow-md ${isToday ? 'border-blue-200 bg-blue-50/50' : ''}`}>
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between">
                             <div className="flex items-start gap-4 flex-1">
@@ -218,7 +236,7 @@ export default function MemberMeetings() {
                                   <h3 className="font-semibold text-lg">{meeting.title}</h3>
                                   <Badge className={getStatusColor(meeting.status)}>
                                     {getStatusIcon(meeting.status)}
-                                    <span className="ml-1">{meeting.status.replace('_',' ')}</span>
+                                    <span className="ml-1">{meeting.status.replace('_', ' ')}</span>
                                   </Badge>
                                   {meeting.priority && meeting.priority !== 'medium' && (
                                     <Badge variant={meeting.priority === 'urgent' ? 'destructive' : 'secondary'} className="text-xs">
@@ -226,14 +244,14 @@ export default function MemberMeetings() {
                                     </Badge>
                                   )}
                                 </div>
-                                
+
                                 <div className="flex items-center gap-2 mb-2">
                                   <Badge variant="outline" className="text-xs">
                                     <div className="flex items-center gap-1">
-                                      {getRoleIcon(meeting.organizerRole)}
-                                      <span>Organizer: {meeting.organizer.firstName} {meeting.organizer.lastName}</span>
+                                      {getRoleIcon(organizerRole)}
+                                      <span>Organizer: {getOrganizerName(meeting.organizer)}</span>
                                       <span className="text-[10px] text-muted-foreground/70 ml-1">
-                                        ({meeting.organizerRole?.replace('_', ' ')})
+                                        ({organizerRole.replace('_', ' ')})
                                       </span>
                                     </div>
                                   </Badge>
@@ -243,11 +261,11 @@ export default function MemberMeetings() {
                                     </Badge>
                                   )}
                                 </div>
-                                
+
                                 {meeting.description && (
                                   <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{meeting.description}</p>
                                 )}
-                                
+
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                   <div className="flex items-center gap-2">
                                     <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -271,7 +289,7 @@ export default function MemberMeetings() {
                                     </div>
                                   </div>
                                 </div>
-                                
+
                                 {meeting.location?.physical?.room && (
                                   <div className="flex items-center gap-2 mt-2">
                                     <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -281,11 +299,11 @@ export default function MemberMeetings() {
                                     </span>
                                   </div>
                                 )}
-                                
-                                {meeting.meetingLink && (
+
+                                {meetingLink && (
                                   <div className="flex items-center gap-2 mt-2">
                                     <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                                    <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                    <a href={meetingLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
                                       Join Meeting Link
                                     </a>
                                   </div>
@@ -293,9 +311,9 @@ export default function MemberMeetings() {
                               </div>
                             </div>
                             <div className="flex flex-col items-end gap-2 ml-4">
-                              {meeting.meetingLink && (
+                              {meetingLink && (
                                 <Button variant="outline" size="sm" asChild>
-                                  <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
+                                  <a href={meetingLink} target="_blank" rel="noopener noreferrer">
                                     <ExternalLink className="w-4 h-4 mr-2" /> Join
                                   </a>
                                 </Button>
@@ -310,8 +328,8 @@ export default function MemberMeetings() {
                       <Video className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <h3 className="text-lg font-medium mb-2">No meetings found</h3>
                       <p className="text-muted-foreground mb-4">
-                        {searchQuery || statusFilter !== 'all' 
-                          ? 'Try adjusting your search filters' 
+                        {searchQuery || statusFilter !== 'all'
+                          ? 'Try adjusting your search filters'
                           : 'No meeting invitations yet'
                         }
                       </p>
@@ -341,8 +359,9 @@ export default function MemberMeetings() {
                 <div className="space-y-4">
                   {todayMeetings.map(meeting => {
                     const dateTime = formatDateTime(meeting.startTime);
+                    const meetingLink = getMeetingLink(meeting);
                     return (
-                      <div key={meeting.id} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
+                      <div key={meeting.id || (meeting as any)._id} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                             <Video className="h-6 w-6 text-blue-600" />
@@ -372,9 +391,9 @@ export default function MemberMeetings() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          {meeting.meetingLink && (
+                          {meetingLink && (
                             <Button variant="outline" size="sm" asChild>
-                              <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
+                              <a href={meetingLink} target="_blank" rel="noopener noreferrer">
                                 <ExternalLink className="w-4 h-4 mr-2" /> Join
                               </a>
                             </Button>

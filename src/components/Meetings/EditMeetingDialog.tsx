@@ -44,9 +44,10 @@ export default function EditMeetingDialog({ open, onClose, meeting }: EditMeetin
   useEffect(() => {
     if (meeting) {
       const date = new Date(meeting.date);
+      const meetingType = meeting.type === 'department' || meeting.type === 'user' ? meeting.type : 'department';
       setMeetingData({
         title: meeting.title,
-        type: meeting.type,
+        type: meetingType,
         selectedDepartments: meeting.departments || [],
         selectedUsers: meeting.attendees,
         meetingDate: date.toISOString().split('T')[0],

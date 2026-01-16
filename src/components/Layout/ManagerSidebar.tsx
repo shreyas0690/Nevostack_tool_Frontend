@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useFeatureAccess, FEATURE_SECTION_MAP, AdminSection } from '@/hooks/useFeatureAccess';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Building2, 
-  ClipboardList, 
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  ClipboardList,
   Calendar,
   BarChart3,
   ChevronLeft,
@@ -47,27 +47,27 @@ export default function ManagerSidebar({ activeTab, onTabChange }: ManagerSideba
   const getVisibleMenuItems = () => {
     console.log('🔍 Manager Sidebar - Current features:', features);
     console.log('🔍 Manager Sidebar - All menu items:', menuItems.map(item => item.id));
-    
+
     const filtered = menuItems.filter((item) => {
       const section = item.id as AdminSection;
       const requiredFeatures = FEATURE_SECTION_MAP[section] || [];
-      
+
       console.log(`🔍 Manager Sidebar - Checking section: ${section}`);
       console.log(`🔍 Manager Sidebar - Required features: ${requiredFeatures}`);
-      
+
       // If no features required, always show
       if (requiredFeatures.length === 0) {
         console.log(`✅ Manager Sidebar - ${section}: No features required - showing`);
         return true;
       }
-      
+
       // Check if user has any of the required features
       const hasAccess = hasAnyFeature(requiredFeatures);
       console.log(`🔍 Manager Sidebar - ${section}: Has access: ${hasAccess}`);
-      
+
       return hasAccess;
     });
-    
+
     console.log('🔍 Manager Sidebar - Visible menu items:', filtered.map(item => item.id));
     console.log('🔍 Manager Sidebar - Hidden menu items:', menuItems.filter(item => !filtered.includes(item)).map(item => item.id));
     return filtered;
@@ -100,7 +100,7 @@ export default function ManagerSidebar({ activeTab, onTabChange }: ManagerSideba
         {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-          
+
           return (
             <Button
               key={item.id}
@@ -123,7 +123,7 @@ export default function ManagerSidebar({ activeTab, onTabChange }: ManagerSideba
                 )}>
                   <Icon size={20} className="transition-transform duration-200 group-hover:scale-110" />
                 </div>
-                
+
                 {!collapsed && (
                   <span className={cn(
                     "ml-3 font-medium transition-all duration-200",
@@ -133,7 +133,7 @@ export default function ManagerSidebar({ activeTab, onTabChange }: ManagerSideba
                   </span>
                 )}
               </div>
-              
+
               {/* Active indicator */}
               {isActive && !collapsed && (
                 <div className="absolute right-2 top-1/2 transform -translate-y-1/2">

@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Calendar as CalendarIcon, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Calendar as CalendarIcon,
+  CalendarDays,
+  Clock,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   User,
   Plus,
@@ -47,6 +48,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/Auth/AuthProvider';
@@ -70,7 +79,7 @@ interface LeaveFormData {
 export default function HRLeaveManagement() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
-  
+
   // Form state
   const [formData, setFormData] = useState<LeaveFormData>({
     leaveType: '',
@@ -96,6 +105,8 @@ export default function HRLeaveManagement() {
   const [requests, setRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [companyUsers, setCompanyUsers] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   // Dialog states
   const [isNewRequestDialogOpen, setIsNewRequestDialogOpen] = useState(false);
@@ -169,7 +180,7 @@ export default function HRLeaveManagement() {
           currentUser: currentUser,
           note: 'Using HR Management API - excludes HR own requests'
         });
-        
+
         // Additional debug for API response
         console.log('🔍 HR Management API Response Details:', {
           responseKeys: Object.keys(res || {}),
@@ -197,14 +208,14 @@ export default function HRLeaveManagement() {
           approvedDate: l.approvedAt ? new Date(l.approvedAt) : null,
           rejectionReason: l.rejectionReason || null
         }));
-        
+
         console.log('🔍 HR Management Mapped Requests Debug:', {
           mappedRequests: mappedRequests,
           mappedLength: mappedRequests.length,
           sampleRequest: mappedRequests[0],
           note: 'These requests exclude HR own requests'
         });
-        
+
         setRequests(mappedRequests);
         // Load company users for manager/team filtering
         try {
@@ -252,7 +263,33 @@ export default function HRLeaveManagement() {
     };
 
     load();
-    return () => { mounted = false; };
+
+    // Listen for WebSocket notifications to auto-refresh
+    const handleNotification = (event: any) => {
+      const notification = event.detail;
+      if (
+        notification.type === 'leave_request' ||
+        notification.type === 'leave_approved' ||
+        notification.type === 'leave_rejected' ||
+        notification.type === 'leave_cancelled'
+      ) {
+        console.log('🔄 Refreshing HR leave management due to notification:', notification.type);
+        load();
+
+        // Show toast for the update
+        toast({
+          title: 'Update Received',
+          description: notification.message || 'Leave requests have been updated.',
+        });
+      }
+    };
+
+    window.addEventListener('websocket-notification', handleNotification as EventListener);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('websocket-notification', handleNotification as EventListener);
+    };
   }, []);
 
   // Get HR's personal leave requests
@@ -261,13 +298,13 @@ export default function HRLeaveManagement() {
   // Use admin's Request Management data structure (same as admin panel)
   const getFilteredRequests = () => {
     let filteredRequests = requests;
-    
+
     console.log('🔍 HR Panel - Using Admin Data Structure:', {
       currentUserRole: currentUser?.role,
       totalRequests: requests.length,
       companyUsers: companyUsers.length
     });
-    
+
     // HR panel now uses admin-level data access (same as admin panel)
     // No role-based filtering - HR sees all requests like admin
     // This replaces the previous "Manage Request" section with admin's "Request Management" data
@@ -275,7 +312,7 @@ export default function HRLeaveManagement() {
 
     // Apply search filter
     if (searchTerm) {
-      filteredRequests = filteredRequests.filter(r => 
+      filteredRequests = filteredRequests.filter(r =>
         r.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.reason.toLowerCase().includes(searchTerm.toLowerCase())
       );
@@ -286,13 +323,13 @@ export default function HRLeaveManagement() {
       filteredRequests = filteredRequests.filter(r => r.status === statusFilter);
     }
 
-    return filteredRequests.sort((a, b) => 
+    return filteredRequests.sort((a, b) =>
       new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime()
     );
   };
 
   const filteredLeaveRequests = getFilteredRequests();
-  
+
   console.log('🔍 HR Filtered Requests Debug:', {
     totalRequests: requests.length,
     filteredRequests: filteredLeaveRequests.length,
@@ -301,6 +338,15 @@ export default function HRLeaveManagement() {
     currentUserRole: currentUser?.role,
     companyUsers: companyUsers.length
   });
+
+  const totalPages = Math.ceil(filteredLeaveRequests.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedLeaveRequests = filteredLeaveRequests.slice(startIndex, endIndex);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
 
   const predefinedRejectionReasons = [
     'Insufficient leave balance',
@@ -353,7 +399,7 @@ export default function HRLeaveManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.leaveType || !formData.startDate || !formData.endDate || !formData.reason) {
       toast({ title: 'Validation Error', description: 'Please fill in all required fields.', variant: 'destructive' });
       return;
@@ -380,7 +426,7 @@ export default function HRLeaveManagement() {
           totalDays: payload.days,
           reason: payload.reason,
           status: 'pending',
-      appliedDate: new Date(),
+          appliedDate: new Date(),
           rejectionReason: null,
           approvedBy: null,
           approvedDate: null,
@@ -423,10 +469,10 @@ export default function HRLeaveManagement() {
   };
 
   const handleReject = (requestId: string) => {
-    const finalReason = selectedRejectionReason === 'Other' 
-      ? customRejectionReason.trim() 
+    const finalReason = selectedRejectionReason === 'Other'
+      ? customRejectionReason.trim()
       : selectedRejectionReason;
-    
+
     if (!finalReason) {
       toast({
         title: "Rejection Reason Required",
@@ -435,7 +481,7 @@ export default function HRLeaveManagement() {
       });
       return;
     }
-    
+
     (async () => {
       try {
         const res: any = await leaveService.rejectLeave(requestId, finalReason);
@@ -448,8 +494,8 @@ export default function HRLeaveManagement() {
         toast({ title: 'Reject Failed', description: 'Could not reject leave.' });
       } finally {
         setSelectedRequest('');
-    setSelectedRejectionReason('');
-    setCustomRejectionReason('');
+        setSelectedRejectionReason('');
+        setCustomRejectionReason('');
       }
     })();
   };
@@ -477,7 +523,7 @@ export default function HRLeaveManagement() {
       rejected: 'destructive',
       cancelled: 'secondary'
     } as const;
-    
+
     return variants[status] || 'outline';
   };
 
@@ -598,7 +644,7 @@ export default function HRLeaveManagement() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                Apply for Leave
+                    Apply for Leave
                   </h2>
                   <p className="text-sm font-normal text-gray-600 dark:text-gray-400 mt-1">
                     Submit your leave request with all necessary details
@@ -617,8 +663,8 @@ export default function HRLeaveManagement() {
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Leave Details</h3>
                   </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Leave Type */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Leave Type */}
                     <div className="space-y-3">
                       <Label htmlFor="leaveType" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                         <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
@@ -626,32 +672,32 @@ export default function HRLeaveManagement() {
                       </Label>
                       <Select value={formData.leaveType} onValueChange={(value) => handleInputChange('leaveType', value)} disabled={isSubmitting}>
                         <SelectTrigger className="h-11 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed">
-                        <SelectValue placeholder="Select leave type" />
-                      </SelectTrigger>
-                      <SelectContent>
+                          <SelectValue placeholder="Select leave type" />
+                        </SelectTrigger>
+                        <SelectContent>
                           <SelectItem value="annual" className="cursor-pointer">🏖️ Annual Leave</SelectItem>
                           <SelectItem value="sick" className="cursor-pointer">🏥 Sick Leave</SelectItem>
                           <SelectItem value="emergency" className="cursor-pointer">🚨 Emergency Leave</SelectItem>
                           <SelectItem value="compensatory" className="cursor-pointer">💼 Compensatory Leave</SelectItem>
                           <SelectItem value="maternity" className="cursor-pointer">👶 Maternity Leave</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                  {/* Emergency Contact */}
+                    {/* Emergency Contact */}
                     <div className="space-y-3">
                       <Label htmlFor="emergencyContact" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                         <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                         Emergency Contact
                       </Label>
-                    <Input
-                      id="emergencyContact"
-                      placeholder="Contact number during leave"
+                      <Input
+                        id="emergencyContact"
+                        placeholder="Contact number during leave"
                         className="h-11 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                      value={formData.emergencyContact}
-                      onChange={(e) => handleInputChange('emergencyContact', e.target.value)}
+                        value={formData.emergencyContact}
+                        onChange={(e) => handleInputChange('emergencyContact', e.target.value)}
                         disabled={isSubmitting}
-                    />
+                      />
                     </div>
                   </div>
                 </div>
@@ -663,71 +709,71 @@ export default function HRLeaveManagement() {
                       <CalendarIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Select Dates</h3>
-                </div>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Start Date */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Start Date */}
                     <div className="space-y-3">
                       <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                         <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
                         Start Date *
                       </Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
                             disabled={isSubmitting}
-                          className={cn(
+                            className={cn(
                               "w-full h-11 justify-start text-left font-normal border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
-                            !formData.startDate && "text-muted-foreground"
-                          )}
-                        >
+                              !formData.startDate && "text-muted-foreground"
+                            )}
+                          >
                             <CalendarIcon className="mr-2 h-4 w-4 text-purple-500" />
                             {formData.startDate ? format(formData.startDate, 'PPP') : 'Pick start date'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
                           <UICalendar
-                          mode="single"
-                          selected={formData.startDate}
-                          onSelect={(date) => handleInputChange('startDate', date)}
-                          disabled={(date) => date < new Date()}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                            mode="single"
+                            selected={formData.startDate}
+                            onSelect={(date) => handleInputChange('startDate', date)}
+                            disabled={(date) => date < new Date()}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
 
-                  {/* End Date */}
+                    {/* End Date */}
                     <div className="space-y-3">
                       <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                         <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
                         End Date *
                       </Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
                             disabled={isSubmitting}
-                          className={cn(
+                            className={cn(
                               "w-full h-11 justify-start text-left font-normal border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed",
-                            !formData.endDate && "text-muted-foreground"
-                          )}
-                        >
+                              !formData.endDate && "text-muted-foreground"
+                            )}
+                          >
                             <CalendarIcon className="mr-2 h-4 w-4 text-purple-500" />
                             {formData.endDate ? format(formData.endDate, 'PPP') : 'Pick end date'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
                           <UICalendar
-                          mode="single"
-                          selected={formData.endDate}
-                          onSelect={(date) => handleInputChange('endDate', date)}
-                          disabled={(date) => date < (formData.startDate || new Date())}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
+                            mode="single"
+                            selected={formData.endDate}
+                            onSelect={(date) => handleInputChange('endDate', date)}
+                            disabled={(date) => date < (formData.startDate || new Date())}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
                 </div>
@@ -766,12 +812,12 @@ export default function HRLeaveManagement() {
                       <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
                       Reason for Leave *
                     </Label>
-                  <Textarea
-                    id="reason"
+                    <Textarea
+                      id="reason"
                       placeholder="Please provide a detailed reason for your leave request. Include any relevant information that will help with approval process..."
                       className="min-h-[120px] border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    value={formData.reason}
-                    onChange={(e) => handleInputChange('reason', e.target.value)}
+                      value={formData.reason}
+                      onChange={(e) => handleInputChange('reason', e.target.value)}
                       disabled={isSubmitting}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -782,8 +828,8 @@ export default function HRLeaveManagement() {
 
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row justify-end gap-3">
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     variant="outline"
                     onClick={() => setFormData({
                       leaveType: '',
@@ -811,7 +857,7 @@ export default function HRLeaveManagement() {
                     ) : (
                       <>
                         <Send className="w-4 h-4 mr-2" />
-                    Submit Leave Request
+                        Submit Leave Request
                       </>
                     )}
                   </Button>
@@ -939,421 +985,588 @@ export default function HRLeaveManagement() {
           ) : (
             <div className="space-y-6">
               {/* Header */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-3xl font-bold tracking-tight">Leave Management</h1>
-                  <p className="text-muted-foreground mt-1">Overview of leave requests, quick actions, and processing</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Dialog open={isNewRequestDialogOpen} onOpenChange={setIsNewRequestDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" className="px-3">New Request</Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-                      <NewLeaveDialogContent onClose={() => setIsNewRequestDialogOpen(false)} />
-                    </DialogContent>
-                  </Dialog>
+              <div className="relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-red-50/80 via-red-50/40 to-transparent dark:from-red-900/20 dark:via-red-900/10 dark:to-transparent rounded-xl"></div>
+                <div className="relative bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-xl border border-slate-200/60 dark:border-slate-700/60 p-3 sm:p-4 md:p-5 lg:p-6 shadow-lg shadow-red-500/5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                    <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
+                      <div className="relative">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-red-500 via-red-600 to-red-700 dark:from-red-400 dark:via-red-500 dark:to-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
+                          <CalendarDays className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-white" />
+                        </div>
+                        <div className="absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 lg:w-5 lg:h-5 bg-green-500 rounded-full border-2 sm:border-3 border-white dark:border-slate-800 flex items-center justify-center">
+                          <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white rounded-full"></div>
+                        </div>
+                      </div>
+                      <div>
+                        <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100 mb-1">
+                          <span className="hidden sm:inline">Request Management</span>
+                          <span className="sm:hidden">Requests</span>
+                        </h1>
+                        <p className="text-xs sm:text-sm md:text-base text-slate-600 dark:text-slate-400">
+                          <span className="hidden sm:inline">Review, approve, and track leave requests</span>
+                          <span className="sm:hidden">Review and track requests</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2">
+                          <div className="flex items-center gap-1 sm:gap-2 text-xs text-slate-500 dark:text-slate-500">
+                            <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-green-500 rounded-full"></div>
+                            <span className="hidden sm:inline">System Active</span>
+                            <span className="sm:hidden">Active</span>
+                          </div>
+                          <div className="flex items-center gap-1 sm:gap-2 text-xs text-slate-500 dark:text-slate-500">
+                            <Users className="h-3 w-3" />
+                            <span className="hidden sm:inline">{requests.length} Total Requests</span>
+                            <span className="sm:hidden">{requests.length} Requests</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <Dialog open={isNewRequestDialogOpen} onOpenChange={setIsNewRequestDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            onClick={() => setIsNewRequestDialogOpen(true)}
+                            className="group relative px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
+                          >
+                            <Plus className="h-4 w-4 group-hover:rotate-90 transition-transform duration-200" />
+                            <span>New Request</span>
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+                          <NewLeaveDialogContent onClose={() => setIsNewRequestDialogOpen(false)} />
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card className="hover:shadow-lg transition-shadow">
-                  <CardContent className="pt-6">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
+                <Card className="group border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
-                        <p className="text-2xl font-bold">{requests.length}</p>
-                        <p className="text-xs text-muted-foreground mt-1">All requests in system</p>
+                        <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                          <span className="hidden sm:inline">Total Requests</span>
+                          <span className="sm:hidden">Total</span>
+                        </p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 dark:text-slate-100 mt-1 sm:mt-2">{requests.length}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 sm:mt-2">
+                          <span className="hidden sm:inline">All requests in system</span>
+                          <span className="sm:hidden">All requests</span>
+                        </p>
                       </div>
-                      <CalendarIcon className="h-10 w-10 text-muted-foreground" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-16 lg:h-16 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/30 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <CalendarIcon className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-red-600 dark:text-red-400" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-lg transition-shadow">
-                  <CardContent className="pt-6">
+                <Card className="group border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">Pending</p>
-                        <p className="text-2xl font-bold text-amber-600">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Pending</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-amber-600 dark:text-amber-400 mt-1 sm:mt-2">
                           {requests.filter(r => r.status === 'pending').length}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">Awaiting processing</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 sm:mt-2">
+                          <span className="hidden sm:inline">Awaiting processing</span>
+                          <span className="sm:hidden">Awaiting</span>
+                        </p>
                       </div>
-                      <Clock className="h-10 w-10 text-amber-600" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-16 lg:h-16 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/30 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <Clock className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-amber-600 dark:text-amber-400" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-lg transition-shadow">
-                  <CardContent className="pt-6">
+                <Card className="group border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">Approved</p>
-                        <p className="text-2xl font-bold text-green-600">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Approved</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-green-600 dark:text-green-400 mt-1 sm:mt-2">
                           {requests.filter(r => r.status === 'approved').length}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">Processed approvals</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 sm:mt-2">
+                          <span className="hidden sm:inline">Processed approvals</span>
+                          <span className="sm:hidden">Approved</span>
+                        </p>
                       </div>
-                      <Check className="h-10 w-10 text-green-600" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-16 lg:h-16 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <Check className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-green-600 dark:text-green-400" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="hover:shadow-lg transition-shadow">
-                  <CardContent className="pt-6">
+                <Card className="group border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all duration-300 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+                  <CardContent className="p-3 sm:p-4 lg:p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground">Rejected</p>
-                        <p className="text-2xl font-bold text-red-600">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Rejected</p>
+                        <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-red-600 dark:text-red-400 mt-1 sm:mt-2">
                           {requests.filter(r => r.status === 'rejected').length}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">Requests declined</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 sm:mt-2">
+                          <span className="hidden sm:inline">Requests declined</span>
+                          <span className="sm:hidden">Declined</span>
+                        </p>
                       </div>
-                      <X className="h-10 w-10 text-red-600" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-16 lg:h-16 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/30 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <X className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-red-600 dark:text-red-400" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
               {/* Filters */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                    <CalendarIcon className="h-5 w-5" />
-                    Leave Requests Management
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-                  <div className="flex gap-4 mb-6 items-center">
-                    <div className="flex-1">
-                <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                          placeholder="Search by employee name or reason..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                          className="pl-10"
-                  />
-                </div>
+              <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
+                  <CardTitle className="flex items-center gap-2 sm:gap-3 lg:gap-4 text-slate-900 dark:text-slate-100">
+                    <div className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                      <Users className="h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-red-600 dark:text-red-400" />
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div>
+                      <h2 className="text-sm sm:text-base md:text-lg lg:text-xl font-bold">
+                        <span className="hidden sm:inline">Leave Requests Management</span>
+                        <span className="sm:hidden">Requests</span>
+                      </h2>
+                      <p className="text-xs sm:text-sm md:text-base text-slate-600 dark:text-slate-400">
+                        <span className="hidden sm:inline">Filter and search through leave requests</span>
+                        <span className="sm:hidden">Filter and search requests</span>
+                      </p>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3 sm:p-4">
+                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 items-center">
+                    <div className="flex-1 w-full">
+                      <div className="relative">
+                        <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                        <Input
+                          placeholder="Search by employee name or reason..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10 sm:pl-12 h-9 sm:h-10 lg:h-12 border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400 rounded-lg sm:rounded-xl text-sm sm:text-base"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 w-full sm:w-auto">
                       <Select value={statusFilter} onValueChange={(value: LeaveStatus | 'all') => setStatusFilter(value)}>
-                        <SelectTrigger className="w-40">
+                        <SelectTrigger className="w-full sm:w-40 lg:w-48 h-9 sm:h-10 lg:h-12 border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400 rounded-lg sm:rounded-xl text-sm sm:text-base">
                           <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-                      <Button variant="outline" size="sm">Filter</Button>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all" className="text-sm sm:text-base">All Status</SelectItem>
+                          <SelectItem value="pending" className="text-sm sm:text-base">Pending</SelectItem>
+                          <SelectItem value="approved" className="text-sm sm:text-base">Approved</SelectItem>
+                          <SelectItem value="rejected" className="text-sm sm:text-base">Rejected</SelectItem>
+                          <SelectItem value="cancelled" className="text-sm sm:text-base">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button variant="outline" size="sm" className="h-9 sm:h-10 lg:h-12 px-4 sm:px-6 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg sm:rounded-xl font-medium text-sm sm:text-base">
+                        <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <span className="hidden sm:inline">Apply Filter</span>
+                        <span className="sm:hidden">Filter</span>
+                      </Button>
                     </div>
                   </div>
 
                   {/* Requests List */}
-                  <div className="space-y-4">
-                    
+                  <div className="space-y-3 sm:space-y-4">
                     {filteredLeaveRequests.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        No leave requests found
+                      <div className="flex items-center justify-center py-8 sm:py-12">
+                        <div className="text-center">
+                          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                            <CalendarIcon className="h-6 w-6 sm:h-8 sm:w-8 text-slate-400 dark:text-slate-500" />
+                          </div>
+                          <h3 className="text-base sm:text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
+                            {requests.length === 0 ? 'No leave requests found' : 'No leave requests match your search'}
+                          </h3>
+                          <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm">
+                            {requests.length === 0 ? 'No leave requests are available yet' : 'Try adjusting your search criteria'}
+                          </p>
+                        </div>
                       </div>
                     ) : (
-                      filteredLeaveRequests.map((request) => {
-                        const leaveConfig = leaveTypeConfig[request.leaveType];
-                        
+                      paginatedLeaveRequests.map((request) => {
+                        const leaveConfig = leaveTypeConfig[request.leaveType] || {
+                          label: 'Unknown Leave',
+                          color: '#6B7280',
+                          maxDays: 0
+                        };
+
                         return (
-                          <div key={request.id} className="border rounded-lg p-4 space-y-3 hover:shadow transition-all">
-                            <div className="flex items-start justify-between">
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: leaveConfig.color }}>
-                                    <User className="h-5 w-5 text-white" />
-                                  </div>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium text-lg">{request.employeeName}</span>
-                                      <Badge 
-                                        style={{ backgroundColor: leaveConfig.color, color: 'white' }}
-                                        className="text-xs"
-                                      >
-                                        {leaveConfig.label}
-                                      </Badge>
-                                    </div>
-                                    <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                                      <div className="flex items-center gap-1">
-                                        <CalendarIcon className="h-3 w-3" />
-                                        {format(request.startDate, 'MMM dd')} - {format(request.endDate, 'MMM dd, yyyy')}
+                          <div key={request.id} className="group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 hover:shadow-md transition-shadow duration-200 overflow-hidden">
+                            <div className="relative">
+                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+                                <div className="space-y-3 sm:space-y-4">
+                                  <div className="flex items-center gap-3 sm:gap-4">
+                                    <div className="relative">
+                                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: leaveConfig.color }}>
+                                        <User className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                                       </div>
-                                      <div className="flex items-center gap-1">
-                                        <Clock className="h-3 w-3" />
-                                        {request.totalDays} day{request.totalDays !== 1 ? 's' : ''}
+                                      <div className="absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                                        <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-green-500 rounded-full"></div>
                                       </div>
                                     </div>
-                                  </div>
-                                </div>
-
-                                <p className="text-sm mt-2">{request.reason}</p>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  Applied: {format(request.appliedDate, 'MMM dd, yyyy')}
-                                  {request.approvedDate && (
-                                    <span> • Processed: {format(request.approvedDate, 'MMM dd, yyyy')}</span>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col items-end gap-2">
-                                <Badge variant={getStatusBadge(request.status)}>
-                                  {request.status.replace('_', ' ')}
-                                </Badge>
-
-                                <div className="flex items-center gap-2">
-                                  <Dialog>
-                                    <DialogTrigger asChild>
-                                      <Button 
-                                        size="sm" 
-                                        variant="outline"
-                                        onClick={() => handleEdit(request)}
-                                        disabled={!canEdit(request)}
-                                        className={`h-8 px-3 text-blue-600 hover:text-blue-700 hover:bg-blue-50 ${!canEdit(request) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                      >
-                                        <Edit className="h-3 w-3 mr-1" />
-                                        Edit
-                                      </Button>
-                                    </DialogTrigger>
-                                    <DialogContent className="max-w-md">
-                                      <DialogHeader>
-                                        <DialogTitle>Edit Leave Request</DialogTitle>
-                                      </DialogHeader>
-                                      <div className="space-y-4">
-                                        <div>
-                                          <Label htmlFor="edit-leave-type">Leave Type</Label>
-                                          <Select value={editForm.leaveType} onValueChange={(value) => setEditForm(prev => ({ ...prev, leaveType: value }))}>
-                  <SelectTrigger>
-                                              <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                                              {Object.entries(leaveTypeConfig).map(([key, config]) => (
-                                                <SelectItem key={key} value={key}>
-                                                  {config.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-                                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                            <Label htmlFor="edit-start-date">Start Date</Label>
-                                            <Input
-                                              id="edit-start-date"
-                                              type="date"
-                                              value={editForm.startDate}
-                                              onChange={(e) => setEditForm(prev => ({ ...prev, startDate: e.target.value }))}
-                                            />
-                              </div>
-                                          <div>
-                                            <Label htmlFor="edit-end-date">End Date</Label>
-                                            <Input
-                                              id="edit-end-date"
-                                              type="date"
-                                              value={editForm.endDate}
-                                              onChange={(e) => setEditForm(prev => ({ ...prev, endDate: e.target.value }))}
-                                            />
-                          </div>
-                        </div>
-
-                          <div>
-                                          <Label htmlFor="edit-reason">Reason</Label>
-                                          <Textarea
-                                            id="edit-reason"
-                                            placeholder="Enter reason for leave..."
-                                            value={editForm.reason}
-                                            onChange={(e) => setEditForm(prev => ({ ...prev, reason: e.target.value }))}
-                                            rows={3}
-                                          />
-                          </div>
-
-                          <div>
-                                          <Label htmlFor="edit-status">Status</Label>
-                                          <Select value={editForm.status} onValueChange={(value) => setEditForm(prev => ({ ...prev, status: value, rejectionReason: (value === 'rejected' || value === 'cancelled') ? prev.rejectionReason : '' }))}>
-                                            <SelectTrigger>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="pending">Pending</SelectItem>
-                                              <SelectItem value="approved">Approved</SelectItem>
-                                              <SelectItem value="rejected">Rejected</SelectItem>
-                                              <SelectItem value="cancelled">Cancelled</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-
-                                          {(editForm.status === 'rejected' || editForm.status === 'cancelled') && (
-                                            <div className="mt-3 space-y-2">
-                                              <Label>Reason</Label>
-                                              <Select value={editForm.rejectionReason} onValueChange={(v) => setEditForm(prev => ({ ...prev, rejectionReason: v }))}>
-                                                <SelectTrigger>
-                                                  <SelectValue placeholder="Select a reason" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  {predefinedRejectionReasons.map((reason) => (
-                                                    <SelectItem key={reason} value={reason}>{reason}</SelectItem>
-                                                  ))}
-                                                  <SelectItem value="Other">Other</SelectItem>
-                                                </SelectContent>
-                                              </Select>
-
-                                              {editForm.rejectionReason === 'Other' && (
-                                                <Textarea placeholder="Provide custom reason" value={editForm.rejectionReason === 'Other' ? '' : editForm.rejectionReason} onChange={(e) => setEditForm(prev => ({ ...prev, rejectionReason: e.target.value }))} />
-                                              )}
-                          </div>
-                                          )}
-                        </div>
-
-                                        <div className="flex gap-2 justify-end">
-                                          <Button variant="outline" onClick={() => setEditingRequest(null)}>
-                                            Cancel
-                                          </Button>
-                                          <Button onClick={handleSaveEdit}>
-                                            Save Changes
-                                          </Button>
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                                        <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-slate-100">
+                                          {request.employeeName || 'Unknown'}
+                                        </h3>
+                                        <Badge
+                                          style={{ backgroundColor: leaveConfig.color, color: 'white' }}
+                                          className="text-xs px-2 sm:px-3 py-1 rounded-full font-medium"
+                                        >
+                                          {leaveConfig.label}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                                        <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-700 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg">
+                                          <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+                                          <span className="font-medium">{format(request.startDate, 'MMM dd')} - {format(request.endDate, 'MMM dd, yyyy')}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-700 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg">
+                                          <Clock className="h-3 w-3 sm:h-4 sm:w-4" />
+                                          <span className="font-medium">{request.totalDays} day{request.totalDays !== 1 ? 's' : ''}</span>
                                         </div>
                                       </div>
-                                    </DialogContent>
-                                  </Dialog>
-
-                                  {canApprove(request) && (
-                                    <div className="flex gap-1">
-                            <Button 
-                              size="sm" 
-                                        variant="outline"
-                              onClick={() => handleApprove(request.id)}
-                                        className="h-8 px-3 text-green-600 hover:text-green-700 hover:bg-green-50"
-                            >
-                                        <Check className="h-3 w-3 mr-1" />
-                              Approve
-                            </Button>
-                            
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  onClick={() => {
-                                    setSelectedRequest(request.id);
-                                    setSelectedRejectionReason('');
-                                    setCustomRejectionReason('');
-                                  }}
-                                            className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                >
-                                            <X className="h-3 w-3 mr-1" />
-                                  Reject
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-md">
-                                <DialogHeader>
-                                  <DialogTitle>Reject Leave Request</DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                            <div className="text-sm text-muted-foreground">
-                                              <p className="font-medium text-foreground mb-2">Employee: {request.employeeName}</p>
-                                              <p>Leave Period: {format(request.startDate, 'MMM dd')} - {format(request.endDate, 'MMM dd, yyyy')}</p>
-                                              <p>Duration: {request.totalDays} day{request.totalDays !== 1 ? 's' : ''}</p>
-                                            </div>
-                                            
-                                            <div className="space-y-2">
-                                              <Label>Reason for Rejection</Label>
-                                              <Select 
-                                                value={selectedRejectionReason} 
-                                                onValueChange={setSelectedRejectionReason}
-                                              >
-                                      <SelectTrigger>
-                                                  <SelectValue placeholder="Select a reason" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {predefinedRejectionReasons.map((reason) => (
-                                          <SelectItem key={reason} value={reason}>
-                                            {reason}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  
-                                  {selectedRejectionReason === 'Other' && (
-                                              <div className="space-y-2">
-                                      <Label>Custom Reason</Label>
-                                      <Textarea 
-                                                  placeholder="Please specify the reason for rejection..."
-                                        value={customRejectionReason}
-                                        onChange={(e) => setCustomRejectionReason(e.target.value)}
-                                                  rows={3}
-                                      />
                                     </div>
-                                  )}
-                                  
-                                            <div className="flex gap-2 justify-end">
-                                              <Button 
-                                                variant="outline" 
-                                                onClick={() => {
-                                                  setSelectedRequest('');
-                                                  setSelectedRejectionReason('');
-                                                  setCustomRejectionReason('');
-                                                }}
-                                              >
-                                      Cancel
-                                    </Button>
-                                    <Button 
-                                                variant="destructive"
-                                      onClick={() => handleReject(request.id)}
-                                                disabled={
-                                                  !selectedRejectionReason || 
-                                                  (selectedRejectionReason === 'Other' && !customRejectionReason.trim())
-                                                }
-                                    >
-                                      Reject Request
-                                    </Button>
+                                  </div>
+
+                                  <div className="ml-0 sm:ml-12 lg:ml-16">
+                                    <div className="p-2 sm:p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                                      <div className="flex items-start gap-2">
+                                        <div className="w-5 h-5 sm:w-6 sm:h-6 bg-red-50 dark:bg-red-900/30 rounded-md flex items-center justify-center flex-shrink-0">
+                                          <FileText className="h-3 w-3 text-red-600 dark:text-red-400" />
+                                        </div>
+                                        <div className="flex-1">
+                                          <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100 mb-1">Reason</h4>
+                                          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{request.reason || 'No reason provided'}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-slate-500 dark:text-slate-500 mt-2">
+                                      <span className="flex items-center gap-1">
+                                        <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-blue-500 rounded-full"></div>
+                                        Applied: {format(request.appliedDate, 'MMM dd, yyyy')}
+                                      </span>
+                                      {request.approvedDate && (
+                                        <span className="flex items-center gap-1">
+                                          <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-green-500 rounded-full"></div>
+                                          Processed: {format(request.approvedDate, 'MMM dd, yyyy')}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                        )}
 
-                                  {request.employeeId === currentUser?.id && request.status === 'pending' && (
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline"
-                                      onClick={() => handleCancel(request.id)}
-                                      className="h-8 px-3 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                                    >
-                                      Cancel
-                                    </Button>
-                                  )}
+                                <div className="flex flex-col sm:items-end gap-2 sm:gap-3">
+                                  <Badge
+                                    variant={getStatusBadge(request.status)}
+                                    className="px-3 sm:px-4 py-1 sm:py-1.5 text-xs font-semibold rounded-full"
+                                  >
+                                    {request.status.replace('_', ' ')}
+                                  </Badge>
+
+                                  <div className="flex flex-wrap items-center gap-1 sm:gap-2">
+                                    <Dialog>
+                                      <DialogTrigger asChild>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleEdit(request)}
+                                          disabled={!canEdit(request)}
+                                          className={`h-7 sm:h-8 px-2 sm:px-3 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg text-xs font-medium ${!canEdit(request) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                          <Edit className="h-3 w-3 mr-1" />
+                                          <span className="hidden sm:inline">Edit</span>
+                                          <span className="sm:hidden">Edit</span>
+                                        </Button>
+                                      </DialogTrigger>
+                                      <DialogContent className="max-w-md">
+                                        <DialogHeader>
+                                          <DialogTitle>Edit Leave Request</DialogTitle>
+                                        </DialogHeader>
+                                        <div className="space-y-4">
+                                          <div>
+                                            <Label htmlFor="edit-leave-type">Leave Type</Label>
+                                            <Select value={editForm.leaveType} onValueChange={(value) => setEditForm(prev => ({ ...prev, leaveType: value }))}>
+                                              <SelectTrigger>
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {Object.entries(leaveTypeConfig).map(([key, config]) => (
+                                                  <SelectItem key={key} value={key}>
+                                                    {config.label}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                              <Label htmlFor="edit-start-date">Start Date</Label>
+                                              <Input
+                                                id="edit-start-date"
+                                                type="date"
+                                                value={editForm.startDate}
+                                                onChange={(e) => setEditForm(prev => ({ ...prev, startDate: e.target.value }))}
+                                              />
+                                            </div>
+                                            <div>
+                                              <Label htmlFor="edit-end-date">End Date</Label>
+                                              <Input
+                                                id="edit-end-date"
+                                                type="date"
+                                                value={editForm.endDate}
+                                                onChange={(e) => setEditForm(prev => ({ ...prev, endDate: e.target.value }))}
+                                              />
+                                            </div>
+                                          </div>
+
+                                          <div>
+                                            <Label htmlFor="edit-reason">Reason</Label>
+                                            <Textarea
+                                              id="edit-reason"
+                                              placeholder="Enter reason for leave..."
+                                              value={editForm.reason}
+                                              onChange={(e) => setEditForm(prev => ({ ...prev, reason: e.target.value }))}
+                                              rows={3}
+                                            />
+                                          </div>
+
+                                          <div>
+                                            <Label htmlFor="edit-status">Status</Label>
+                                            <Select value={editForm.status} onValueChange={(value) => setEditForm(prev => ({ ...prev, status: value, rejectionReason: (value === 'rejected' || value === 'cancelled') ? prev.rejectionReason : '' }))}>
+                                              <SelectTrigger>
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="pending">Pending</SelectItem>
+                                                <SelectItem value="approved">Approved</SelectItem>
+                                                <SelectItem value="rejected">Rejected</SelectItem>
+                                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+
+                                            {(editForm.status === 'rejected' || editForm.status === 'cancelled') && (
+                                              <div className="mt-3 space-y-2">
+                                                <Label>Reason</Label>
+                                                <Select value={editForm.rejectionReason} onValueChange={(v) => setEditForm(prev => ({ ...prev, rejectionReason: v }))}>
+                                                  <SelectTrigger>
+                                                    <SelectValue placeholder="Select a reason" />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    {predefinedRejectionReasons.map((reason) => (
+                                                      <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                                                    ))}
+                                                    <SelectItem value="Other">Other</SelectItem>
+                                                  </SelectContent>
+                                                </Select>
+
+                                                {editForm.rejectionReason === 'Other' && (
+                                                  <Textarea placeholder="Provide custom reason" value={editForm.rejectionReason === 'Other' ? '' : editForm.rejectionReason} onChange={(e) => setEditForm(prev => ({ ...prev, rejectionReason: e.target.value }))} />
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className="flex gap-2 justify-end">
+                                            <Button variant="outline" onClick={() => setEditingRequest(null)}>
+                                              Cancel
+                                            </Button>
+                                            <Button onClick={handleSaveEdit}>
+                                              Save Changes
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </DialogContent>
+                                    </Dialog>
+
+                                    {canApprove(request) && (
+                                      <div className="flex gap-1">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleApprove(request.id)}
+                                          className="h-7 sm:h-8 px-2 sm:px-3 border-green-200 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-xs font-medium"
+                                        >
+                                          <Check className="h-3 w-3 mr-1" />
+                                          <span className="hidden sm:inline">Approve</span>
+                                          <span className="sm:hidden">Approve</span>
+                                        </Button>
+
+                                        <Dialog>
+                                          <DialogTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setSelectedRequest(request.id);
+                                                setSelectedRejectionReason('');
+                                                setCustomRejectionReason('');
+                                              }}
+                                              className="h-7 sm:h-8 px-2 sm:px-3 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-xs font-medium"
+                                            >
+                                              <X className="h-3 w-3 mr-1" />
+                                              <span className="hidden sm:inline">Reject</span>
+                                              <span className="sm:hidden">Reject</span>
+                                            </Button>
+                                          </DialogTrigger>
+                                          <DialogContent className="max-w-md">
+                                            <DialogHeader>
+                                              <DialogTitle>Reject Leave Request</DialogTitle>
+                                            </DialogHeader>
+                                            <div className="space-y-4">
+                                              <div className="text-sm text-muted-foreground">
+                                                <p className="font-medium text-foreground mb-2">Employee: {request.employeeName}</p>
+                                                <p>Leave Period: {format(request.startDate, 'MMM dd')} - {format(request.endDate, 'MMM dd, yyyy')}</p>
+                                                <p>Duration: {request.totalDays} day{request.totalDays !== 1 ? 's' : ''}</p>
+                                              </div>
+
+                                              <div className="space-y-2">
+                                                <Label>Reason for Rejection</Label>
+                                                <Select
+                                                  value={selectedRejectionReason}
+                                                  onValueChange={setSelectedRejectionReason}
+                                                >
+                                                  <SelectTrigger>
+                                                    <SelectValue placeholder="Select a reason" />
+                                                  </SelectTrigger>
+                                                  <SelectContent>
+                                                    {predefinedRejectionReasons.map((reason) => (
+                                                      <SelectItem key={reason} value={reason}>
+                                                        {reason}
+                                                      </SelectItem>
+                                                    ))}
+                                                  </SelectContent>
+                                                </Select>
+                                              </div>
+
+                                              {selectedRejectionReason === 'Other' && (
+                                                <div className="space-y-2">
+                                                  <Label>Custom Reason</Label>
+                                                  <Textarea
+                                                    placeholder="Please specify the reason for rejection..."
+                                                    value={customRejectionReason}
+                                                    onChange={(e) => setCustomRejectionReason(e.target.value)}
+                                                    rows={3}
+                                                  />
+                                                </div>
+                                              )}
+
+                                              <div className="flex gap-2 justify-end">
+                                                <Button
+                                                  variant="outline"
+                                                  onClick={() => {
+                                                    setSelectedRequest('');
+                                                    setSelectedRejectionReason('');
+                                                    setCustomRejectionReason('');
+                                                  }}
+                                                >
+                                                  Cancel
+                                                </Button>
+                                                <Button
+                                                  variant="destructive"
+                                                  onClick={() => handleReject(request.id)}
+                                                  disabled={
+                                                    !selectedRejectionReason ||
+                                                    (selectedRejectionReason === 'Other' && !customRejectionReason.trim())
+                                                  }
+                                                >
+                                                  Reject Request
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          </DialogContent>
+                                        </Dialog>
+                                      </div>
+                                    )}
+
+                                    {request.employeeId === currentUser?.id && request.status === 'pending' && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleCancel(request.id)}
+                                        className="h-7 sm:h-8 px-2 sm:px-3 border-orange-200 dark:border-orange-800 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg text-xs font-medium"
+                                      >
+                                        <span className="hidden sm:inline">Cancel</span>
+                                        <span className="sm:hidden">Cancel</span>
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                            
+
                             {request.rejectionReason && (
-                              <div className="flex items-start gap-2 p-2 bg-destructive/10 rounded text-sm">
-                                <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />
-                                <div>
-                                  <span className="font-medium text-destructive">Rejection Reason: </span>
-                                  <span className="text-destructive">{request.rejectionReason}</span>
+                              <div className="mt-2 sm:mt-3 p-2 sm:p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                <div className="flex items-start gap-2 sm:gap-3">
+                                  <div className="w-5 h-5 sm:w-6 sm:h-6 bg-red-100 dark:bg-red-900/40 rounded-md flex items-center justify-center flex-shrink-0">
+                                    <AlertCircle className="h-3 w-3 text-red-600 dark:text-red-400" />
+                                  </div>
+                                  <div className="flex-1">
+                                    <h4 className="text-xs font-bold text-red-800 dark:text-red-200 mb-1">Rejection Reason</h4>
+                                    <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{request.rejectionReason}</p>
+                                  </div>
                                 </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                  </div>
                         );
                       })
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                    )}
+                  </div>
+
+                  {/* Pagination */}
+                  {filteredLeaveRequests.length > 0 && totalPages > 1 && (
+                    <div className="flex items-center justify-center pt-6">
+                      <Pagination>
+                        <PaginationContent>
+                          <PaginationItem>
+                            <PaginationPrevious
+                              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                              className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'}
+                            />
+                          </PaginationItem>
+
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                            <PaginationItem key={page}>
+                              <PaginationLink
+                                onClick={() => setCurrentPage(page)}
+                                isActive={currentPage === page}
+                                className={`cursor-pointer ${currentPage === page
+                                  ? 'bg-red-600 text-white hover:bg-red-700'
+                                  : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                                  }`}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          ))}
+
+                          <PaginationItem>
+                            <PaginationNext
+                              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                              className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'}
+                            />
+                          </PaginationItem>
+                        </PaginationContent>
+                      </Pagination>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </TabsContent>

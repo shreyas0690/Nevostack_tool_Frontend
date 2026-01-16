@@ -5,7 +5,8 @@ export interface Task {
   id: string;
   title: string;
   description: string;
-  assignedTo: string;
+  assignedTo: string | string[] | any;
+  assignedToList?: Array<string | { id?: string; _id?: string; name?: string }>;
   assignedBy: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   status: 'todo' | 'in_progress' | 'review' | 'completed' | 'cancelled';
@@ -36,7 +37,8 @@ export interface Task {
 export interface CreateTaskRequest {
   title: string;
   description: string;
-  assignedTo: string;
+  assignedTo: string | string[];
+  assignedToList?: string[];
   priority: 'low' | 'medium' | 'high' | 'urgent';
   category: string;
   tags?: string[];
@@ -48,7 +50,8 @@ export interface CreateTaskRequest {
 export interface UpdateTaskRequest {
   title?: string;
   description?: string;
-  assignedTo?: string;
+  assignedTo?: string | string[];
+  assignedToList?: string[];
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   status?: 'todo' | 'in_progress' | 'review' | 'completed' | 'cancelled';
   category?: string;

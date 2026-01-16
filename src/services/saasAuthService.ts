@@ -40,7 +40,7 @@ class SaaSAuthService {
   async login(credentials: SaaSLoginCredentials): Promise<SaaSLoginResponse> {
     try {
       const deviceInfo = this.getDeviceInfo();
-      
+
       const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.LOGIN}`, {
         method: 'POST',
         headers: {
@@ -80,16 +80,16 @@ class SaaSAuthService {
   async logout(): Promise<void> {
     try {
       const deviceId = this.getSaaSDevice()?.deviceId;
-      
+
       await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.LOGOUT}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.getAccessToken()}`
         },
-        body: JSON.stringify({ 
-          logoutAll: false, 
-          deviceId 
+        body: JSON.stringify({
+          logoutAll: false,
+          deviceId
         })
       });
 
@@ -107,7 +107,7 @@ class SaaSAuthService {
   isSaaSAuthenticated(): boolean {
     const token = this.getAccessToken();
     const user = this.getSaaSUser();
-    
+
     if (!token || !user) return false;
 
     // Validate SaaS admin role
@@ -145,52 +145,66 @@ class SaaSAuthService {
     return localStorage.getItem('saas_refresh_token');
   }
 
+  // Refresh promise to handle concurrent refresh requests
+  private refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+
   // Refresh SaaS admin token
   async refreshToken(): Promise<{ accessToken: string; refreshToken: string }> {
-    try {
-      const refreshToken = this.getRefreshToken();
-      const deviceId = this.getSaaSDevice()?.deviceId;
-      
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-
-      const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.REFRESH}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          refreshToken,
-          deviceId
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Token refresh failed');
-      }
-
-      // Update tokens
-      this.setTokens(data.tokens);
-      return data.tokens;
-    } catch (error) {
-      console.error('❌ SaaS token refresh error:', error);
-      // Clear tokens and force re-login
-      this.clearSaaSAuth();
-      throw error;
+    if (this.refreshPromise) {
+      console.log('🔄 SaaS Token refresh already in progress, reusing promise');
+      return this.refreshPromise;
     }
+
+    this.refreshPromise = (async () => {
+      try {
+        const refreshToken = this.getRefreshToken();
+        const deviceId = this.getSaaSDevice()?.deviceId;
+
+        if (!refreshToken) {
+          throw new Error('No refresh token available');
+        }
+
+        const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.REFRESH}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            refreshToken,
+            deviceId
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Token refresh failed');
+        }
+
+        // Update tokens
+        this.setTokens(data.tokens);
+        return data.tokens;
+      } catch (error) {
+        console.error('❌ SaaS token refresh error:', error);
+        // Clear tokens and force re-login
+        this.clearSaaSAuth();
+        throw error;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   // Authenticated fetch for SaaS API calls
   async authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = this.getAccessToken();
-    
+
     console.log('🔍 SaaS Authenticated Fetch - URL:', url);
     console.log('🔍 SaaS Authenticated Fetch - Token available:', !!token);
     console.log('🔍 SaaS Authenticated Fetch - Token preview:', token?.substring(0, 20) + '...');
-    
+
     if (!token) {
       throw new Error('No SaaS access token available');
     }
@@ -213,7 +227,7 @@ class SaaSAuthService {
       try {
         await this.refreshToken();
         const newToken = this.getAccessToken();
-        
+
         return fetch(url, {
           ...options,
           headers: {

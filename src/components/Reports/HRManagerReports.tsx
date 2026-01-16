@@ -6,9 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { 
-  Download, FileText, Calendar as CalendarIcon, Filter, 
-  BarChart3, Users, ClipboardList, CalendarDays, Building2, 
+import {
+  Download, FileText, Calendar as CalendarIcon, Filter,
+  BarChart3, Users, ClipboardList, CalendarDays, Building2,
   TrendingUp, FileSpreadsheet, FileImage
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,10 +26,16 @@ export default function HRManagerReports() {
   const [reportData, setReportData] = useState<OverviewReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Load report data when component mounts or parameters change
+  // New state for explicit date range
+  const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
+    start: startOfMonth(new Date()),
+    end: endOfMonth(new Date())
+  });
+
+  // Load report data when date range changes
   useEffect(() => {
     generateReportData();
-  }, [selectedDate, reportType]);
+  }, [dateRange]);
 
   const reportCategories = [
     { id: 'overview', label: 'HR Manager Overview', icon: BarChart3, description: 'Complete HR Manager overview with all metrics' },
@@ -66,9 +72,8 @@ export default function HRManagerReports() {
   };
 
   const generateReportData = () => {
-    const range = reportType === 'weekly' 
-      ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
-      : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+    // Use the explicit dateRange state
+    const range = dateRange;
 
     // Tasks data
     const tasksData = {
@@ -142,7 +147,7 @@ export default function HRManagerReports() {
     setIsGenerating(true);
     try {
       const reportData = generateReportData();
-      const fileName = `hrmanager_${reportCategory}_report_${reportType}_${format(selectedDate, 'yyyy-MM-dd')}.${fileFormat}`;
+      const fileName = `hrmanager_${reportCategory}_report_${reportType}_${format(dateRange.start, 'yyyy-MM-dd')}_to_${format(dateRange.end, 'yyyy-MM-dd')}.${fileFormat}`;
 
       if (fileFormat === 'json') {
         // Download as JSON
@@ -158,14 +163,14 @@ export default function HRManagerReports() {
       } else if (fileFormat === 'csv') {
         // Download as CSV
         let csvContent = '';
-        
+
         if (reportCategory === 'overview' || reportCategory === 'tasks') {
           csvContent += 'Task Status,Count\n';
           csvContent += `Completed,${reportData.tasks.completed}\n`;
           csvContent += `In Progress,${reportData.tasks.inProgress}\n`;
           csvContent += `Assigned,${reportData.tasks.assigned}\n`;
           csvContent += `Blocked,${reportData.tasks.blocked}\n\n`;
-          
+
           csvContent += 'Priority,Count\n';
           csvContent += `Urgent,${reportData.tasks.byPriority.urgent}\n`;
           csvContent += `High,${reportData.tasks.byPriority.high}\n`;
@@ -192,7 +197,7 @@ export default function HRManagerReports() {
           csvContent += `Approved,${reportData.leave.approved}\n`;
           csvContent += `Pending,${reportData.leave.pending}\n`;
           csvContent += `Rejected,${reportData.leave.rejected}\n\n`;
-          
+
           csvContent += 'Leave Type,Count\n';
           csvContent += `Annual,${reportData.leave.byType.annual}\n`;
           csvContent += `Sick,${reportData.leave.byType.sick}\n`;
@@ -225,9 +230,9 @@ SUMMARY:
 - Total Departments: ${reportData.departments.length}
 
 DEPARTMENT PERFORMANCE:
-${reportData.departments.map(dept => 
-  `- ${dept.name}: ${dept.completedTasks}/${dept.totalTasks} tasks (${dept.completionRate}% completion)`
-).join('\n')}
+${reportData.departments.map(dept =>
+          `- ${dept.name}: ${dept.completedTasks}/${dept.totalTasks} tasks (${dept.completionRate}% completion)`
+        ).join('\n')}
 
 LEAVE SUMMARY:
 - Total Requests: ${reportData.leave.total}
@@ -266,6 +271,7 @@ LEAVE SUMMARY:
   const setQuickDate = (option: string) => {
     const range = getDateRange(option);
     setSelectedDate(range.start);
+    setDateRange(range);
     const optionConfig = quickDateOptions.find(opt => opt.value === option);
     if (optionConfig) {
       setReportType(optionConfig.type);
@@ -298,12 +304,12 @@ LEAVE SUMMARY:
             {reportCategories.map((category) => {
               const Icon = category.icon;
               return (
-                <Card 
-                  key={category.id} 
+                <Card
+                  key={category.id}
                   className={cn(
                     "cursor-pointer transition-all hover:shadow-md",
-                    reportCategory === category.id 
-                      ? "ring-2 ring-primary border-primary" 
+                    reportCategory === category.id
+                      ? "ring-2 ring-primary border-primary"
                       : "hover:border-primary/50"
                   )}
                   onClick={() => setReportCategory(category.id)}
@@ -328,7 +334,16 @@ LEAVE SUMMARY:
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Report Period</label>
-              <Select value={reportType} onValueChange={(value: 'weekly' | 'monthly') => setReportType(value)}>
+              <Select
+                value={reportType}
+                onValueChange={(value: 'weekly' | 'monthly') => {
+                  setReportType(value);
+                  const range = value === 'weekly'
+                    ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
+                    : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+                  setDateRange(range);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -358,7 +373,15 @@ LEAVE SUMMARY:
                   <Calendar
                     mode="single"
                     selected={selectedDate}
-                    onSelect={(date) => date && setSelectedDate(date)}
+                    onSelect={(date) => {
+                      if (date) {
+                        setSelectedDate(date);
+                        const range = reportType === 'weekly'
+                          ? { start: startOfWeek(date), end: endOfWeek(date) }
+                          : { start: startOfMonth(date), end: endOfMonth(date) };
+                        setDateRange(range);
+                      }
+                    }}
                     initialFocus
                   />
                 </PopoverContent>
@@ -546,10 +569,10 @@ LEAVE SUMMARY:
                   <div className="space-y-4">
                     {mockUsers.slice(0, 5).map((user) => {
                       const userTasks = mockTasks.filter(t => t.assignedTo === user.id);
-                      const completionRate = userTasks.length > 0 
+                      const completionRate = userTasks.length > 0
                         ? Math.round((userTasks.filter(t => t.status === 'completed').length / userTasks.length) * 100)
                         : 0;
-                      
+
                       return (
                         <div key={user.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                           <div>
@@ -579,10 +602,10 @@ LEAVE SUMMARY:
                   <div className="space-y-4">
                     {mockDepartments.map((dept) => {
                       const deptTasks = mockTasks.filter(t => t.departmentId === dept.id);
-                      const completionRate = deptTasks.length > 0 
+                      const completionRate = deptTasks.length > 0
                         ? Math.round((deptTasks.filter(t => t.status === 'completed').length / deptTasks.length) * 100)
                         : 0;
-                      
+
                       return (
                         <div key={dept.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                           <div>
@@ -614,7 +637,7 @@ LEAVE SUMMARY:
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Button 
+            <Button
               onClick={() => downloadReport('json')}
               disabled={isGenerating}
               className="flex items-center gap-2"
@@ -622,7 +645,7 @@ LEAVE SUMMARY:
               <FileText className="h-4 w-4" />
               Download JSON
             </Button>
-            <Button 
+            <Button
               onClick={() => downloadReport('csv')}
               disabled={isGenerating}
               variant="outline"
@@ -631,7 +654,7 @@ LEAVE SUMMARY:
               <FileSpreadsheet className="h-4 w-4" />
               Download CSV
             </Button>
-            <Button 
+            <Button
               onClick={() => downloadReport('pdf')}
               disabled={isGenerating}
               variant="outline"
@@ -641,7 +664,7 @@ LEAVE SUMMARY:
               Download PDF
             </Button>
           </div>
-          
+
           {isGenerating && (
             <div className="mt-4 p-4 bg-muted rounded-lg">
               <div className="flex items-center gap-2">

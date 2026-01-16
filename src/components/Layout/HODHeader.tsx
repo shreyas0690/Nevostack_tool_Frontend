@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
+
   Bell,
   HelpCircle,
   Moon,
@@ -19,7 +20,8 @@ import {
   Shield,
   Clipboard as ClipboardIcon,
   Building2,
-  LogOut
+  LogOut,
+  Menu
 } from 'lucide-react';
 import SimpleNotificationBell from '@/components/SimpleNotificationBell';
 import { useAuth } from '@/components/Auth/AuthProvider';
@@ -47,9 +49,10 @@ import useHODManagement from '@/hooks/useHODManagement';
 
 interface HODHeaderProps {
   onNavigate?: (tab: string) => void;
+  onMenuToggle?: () => void;
 }
 
-export default function HODHeader({ onNavigate }: HODHeaderProps) {
+export default function HODHeader({ onNavigate, onMenuToggle }: HODHeaderProps) {
   const { logout, currentUser, loading } = useAuth();
   const { currentTenant, getSystemBranding } = useTenant();
   const { companyData } = useCompany();
@@ -105,7 +108,7 @@ export default function HODHeader({ onNavigate }: HODHeaderProps) {
     if (currentUser?.role === 'super_admin' && currentUser?.email === 'admin@demo.com') {
       return getSystemBranding();
     }
-    
+
     // For regular workspace users, use actual company data
     if (companyData && companyData.name) {
       return {
@@ -116,7 +119,7 @@ export default function HODHeader({ onNavigate }: HODHeaderProps) {
         systemName: `${companyData.name} HOD Dashboard`
       };
     }
-    
+
     // Fallback to SaaS branding if no company data
     return getSystemBranding();
   };
@@ -126,7 +129,7 @@ export default function HODHeader({ onNavigate }: HODHeaderProps) {
   const avatarInitials = (() => {
     const name = displayUser?.name || '';
     if (!name) return 'HOD';
-    return name.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0,2).toUpperCase() || 'HOD';
+    return name.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'HOD';
   })();
 
   // Get user's department from HOD management hook
@@ -152,20 +155,30 @@ export default function HODHeader({ onNavigate }: HODHeaderProps) {
   };
 
   const formatRole = (role: string) => {
-    return role.split('_').map(word => 
+    return role.split('_').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
   };
 
   return (
     <header key={`header-${renderKey}`} className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-      <div className="px-6 py-3 flex items-center gap-3">
+      <div className="px-4 md:px-6 py-3 flex items-center gap-3">
+        {/* Mobile Menu Toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden -ml-2"
+          onClick={onMenuToggle}
+        >
+          <Menu className="h-6 w-6" />
+        </Button>
+
         {/* Brand */}
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-12 h-12 rounded-lg overflow-hidden shadow-sm">
-            <img 
-              src="/nevolog.png" 
-              alt="NevoStack Logo" 
+          <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg overflow-hidden shadow-sm flex-shrink-0">
+            <img
+              src="/nevolog.png"
+              alt="NevoStack Logo"
               className="w-full h-full object-contain"
             />
           </div>
@@ -195,7 +208,7 @@ export default function HODHeader({ onNavigate }: HODHeaderProps) {
         {/* Actions */}
         <div className="ml-auto flex items-center gap-1 md:gap-2">
           <SimpleNotificationBell />
-          
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="hidden sm:inline-flex">

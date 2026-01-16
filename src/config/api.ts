@@ -25,7 +25,9 @@ export const API_CONFIG = {
       STATUS: (id: string) => `/api/users/${id}/status`,
       STATS: '/api/users/stats',
       BULK_ACTIONS: '/api/users/bulk',
-      EXPORT: '/api/users/export'
+      EXPORT: '/api/users/export',
+      EXCHANGE_HOD: '/api/users/exchange-hod',
+      EXCHANGE_MANAGER: '/api/users/exchange-manager'
     },
     
     // Departments

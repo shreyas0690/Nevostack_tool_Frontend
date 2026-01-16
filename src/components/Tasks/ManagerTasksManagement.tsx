@@ -7,9 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { 
-  ClipboardList, 
-  Search, 
+import {
+  ClipboardList,
+  Search,
   Plus,
   Calendar,
   User,
@@ -28,7 +28,10 @@ import {
   Eye,
   UserPlus,
   Paperclip,
-  File
+  File,
+  MessageCircle,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import {
   Select,
@@ -43,11 +46,12 @@ import { mockTasks, mockUsers, mockDepartments } from '@/data/mockData';
 import { taskService } from '@/services/taskService';
 import { useQuery } from '@tanstack/react-query';
 import useHODManagement from '@/hooks/useHODManagement';
+import TaskDiscussionDialog from './TaskDiscussionDialog';
 
 export default function ManagerTasksManagement() {
   const { currentUser } = useAuth();
   const userDeptId = currentUser?.departmentId;
-  const { departmentUsers = [], departmentTasks = [], isLoading } = useHODManagement(userDeptId);
+  const { departmentUsers = [], isLoading } = useHODManagement(userDeptId);
   // Helper to extract the assignedTo id from a task whether populated or string
   const getAssignedToId = (task: any) => {
     if (!task) return '';
@@ -63,14 +67,18 @@ export default function ManagerTasksManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [assignedByFilter, setAssignedByFilter] = useState<string>('all');
+  const [assignedToFilter, setAssignedToFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('recent');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [showTaskDetailsDialog, setShowTaskDetailsDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
+  const [discussionTask, setDiscussionTask] = useState<any>(null);
 
   // Update current time every 30 seconds for more accurate countdown
   useEffect(() => {
@@ -81,7 +89,7 @@ export default function ManagerTasksManagement() {
     return () => clearInterval(timer);
   }, []);
 
-    // Helper function to calculate time remaining with real-time countdown
+  // Helper function to calculate time remaining with real-time countdown
   const getTimeRemaining = (dueDate: any) => {
     const now = currentTime;
 
@@ -104,7 +112,7 @@ export default function ManagerTasksManagement() {
       const overdueDiff = Math.abs(diff);
       const overdueDays = Math.floor(overdueDiff / (1000 * 60 * 60 * 24));
       const overdueHours = Math.floor((overdueDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      
+
       if (overdueDays > 0) {
         return { text: `${overdueDays}d overdue`, color: 'text-red-600', isOverdue: true };
       } else if (overdueHours > 0) {
@@ -162,16 +170,16 @@ export default function ManagerTasksManagement() {
   const updateTaskStatus = async (taskId: string, newStatus: string) => {
     try {
       // Optimistic UI update for local tasks and teamTasks
-      setTasks(prevTasks => 
-        prevTasks.map(task => 
-          task.id === taskId 
+      setTasks(prevTasks =>
+        prevTasks.map(task =>
+          task.id === taskId
             ? { ...task, status: newStatus as any, updatedAt: new Date() }
             : task
         )
       );
 
-      setTeamTasks(prevTasks => 
-        prevTasks.map(task => 
+      setTeamTasks(prevTasks =>
+        prevTasks.map(task =>
           (String(task.id) === String(taskId))
             ? { ...task, status: newStatus as any, updatedAt: new Date() }
             : task
@@ -190,7 +198,7 @@ export default function ManagerTasksManagement() {
           else if (Array.isArray(res?.data)) arr = res.data;
           else if (Array.isArray(res?.tasks)) arr = res.tasks;
 
-          const processedTasks = arr.map((t:any) => {
+          const processedTasks = arr.map((t: any) => {
             const assignedToId = getAssignedToId(t);
             const assignedById = typeof t.assignedBy === 'string' ? t.assignedBy : (t.assignedBy?._id || t.assignedBy?.id);
             return {
@@ -218,35 +226,37 @@ export default function ManagerTasksManagement() {
 
   // Function to add new task
   const handleAssignTask = (taskData: any) => {
-    setTasks(prevTasks => [...prevTasks, taskData]);
+    const createdTasks = Array.isArray(taskData)
+      ? taskData.filter(Boolean)
+      : (taskData ? [taskData] : []);
+    if (createdTasks.length) {
+      setTasks(prevTasks => [...prevTasks, ...createdTasks]);
+    }
     setShowAssignDialog(false);
   };
 
   // Find user's department
-  const userDepartment = currentUser?.departmentId ? 
+  const userDepartment = currentUser?.departmentId ?
     mockDepartments.find(d => d.id === currentUser.departmentId) : null;
 
 
 
 
 
-  // Prefer departmentTasks when available (same behavior as ManagerMyTasks)
-  // Process department tasks to ensure user data is properly handled
-  const departmentTasksOnly = Array.isArray(departmentTasks) && departmentTasks.length > 0
-    ? departmentTasks.map((task: any) => ({
-        ...task,
-        id: task.id || task._id,
-        dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
-        createdAt: task.createdAt ? new Date(task.createdAt) : undefined,
-        updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
-        // Ensure assignedTo and assignedBy are strings for lookup
-        assignedTo: getAssignedToId(task),
-        assignedBy: typeof task.assignedBy === 'string' ? task.assignedBy : (task.assignedBy?._id || task.assignedBy?.id),
-        // Store populated user data if available
-        assignedToUser: task.assignedTo && typeof task.assignedTo === 'object' ? task.assignedTo : null,
-        assignedByUser: task.assignedBy && typeof task.assignedBy === 'object' ? task.assignedBy : null,
-      }))
-    : tasks;
+  // Normalize local tasks created/edited in this view
+  const normalizedLocalTasks = tasks.map((task: any) => ({
+    ...task,
+    id: task.id || task._id,
+    dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+    createdAt: task.createdAt ? new Date(task.createdAt) : undefined,
+    updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
+    // Ensure assignedTo and assignedBy are strings for lookup
+    assignedTo: getAssignedToId(task),
+    assignedBy: typeof task.assignedBy === 'string' ? task.assignedBy : (task.assignedBy?._id || task.assignedBy?.id),
+    // Store populated user data if available
+    assignedToUser: task.assignedTo && typeof task.assignedTo === 'object' ? task.assignedTo : null,
+    assignedByUser: task.assignedBy && typeof task.assignedBy === 'object' ? task.assignedBy : null,
+  }));
 
   // State for team tasks
   const [teamTasks, setTeamTasks] = useState<any[]>([]);
@@ -255,7 +265,7 @@ export default function ManagerTasksManagement() {
   const managedIds: string[] = Array.isArray((currentUser as any)?.managedMemberIds) ? (currentUser as any).managedMemberIds : [];
   // Prefer department users from useHODManagement as fallback (they arrive after login)
   const departmentMemberIds = Array.isArray(departmentUsers) && departmentUsers.length > 0
-    ? departmentUsers.filter((u:any) => String(u.managerId) === String(currentUser?.id)).map((u:any) => String(u.id || u._id))
+    ? departmentUsers.filter((u: any) => String(u.managerId) === String(currentUser?.id)).map((u: any) => String(u.id || u._id))
     : [];
   // Last-resort fallback to mockUsers (local dev data)
   const mockFallbackIds = mockUsers.filter(u => String(u.managerId) === String(currentUser?.id)).map(u => String(u.id));
@@ -279,35 +289,36 @@ export default function ManagerTasksManagement() {
 
       try {
         const res: any = await taskService.getTasksByAssignedToList(usedMemberIds, 1, 1000, { populate: 'assignedTo,assignedBy' } as any);
-      let arr: any[] = [];
-      if (Array.isArray(res)) arr = res;
-      else if (Array.isArray(res?.data)) arr = res.data;
-      else if (Array.isArray(res?.tasks)) arr = res.tasks;
+        let arr: any[] = [];
+        if (Array.isArray(res)) arr = res;
+        else if (Array.isArray(res?.data)) arr = res.data;
+        else if (Array.isArray(res?.tasks)) arr = res.tasks;
 
         console.log('ManagerTasksManagement: Received team tasks response:', arr.length, 'tasks');
 
-        const processedTasks = arr.map((t:any) => {
+        const processedTasks = arr.map((t: any) => {
           // Extract user information from populated objects or IDs
           const assignedToId = getAssignedToId(t);
           const assignedById = typeof t.assignedBy === 'string' ? t.assignedBy : (t.assignedBy?._id || t.assignedBy?.id);
 
           return {
-          ...t,
-          id: t.id || t._id,
-          dueDate: t.dueDate ? new Date(t.dueDate) : undefined,
-          createdAt: t.createdAt ? new Date(t.createdAt) : undefined,
-          updatedAt: t.updatedAt ? new Date(t.updatedAt) : undefined,
-          // Ensure assignedTo and assignedBy are strings for lookup
-          assignedTo: assignedToId,
-          assignedBy: assignedById,
-          // Store populated user data if available
-          assignedToUser: t.assignedTo && typeof t.assignedTo === 'object' ? t.assignedTo : null,
-          assignedByUser: t.assignedBy && typeof t.assignedBy === 'object' ? t.assignedBy : null,
-        }});
+            ...t,
+            id: t.id || t._id,
+            dueDate: t.dueDate ? new Date(t.dueDate) : undefined,
+            createdAt: t.createdAt ? new Date(t.createdAt) : undefined,
+            updatedAt: t.updatedAt ? new Date(t.updatedAt) : undefined,
+            // Ensure assignedTo and assignedBy are strings for lookup
+            assignedTo: assignedToId,
+            assignedBy: assignedById,
+            // Store populated user data if available
+            assignedToUser: t.assignedTo && typeof t.assignedTo === 'object' ? t.assignedTo : null,
+            assignedByUser: t.assignedBy && typeof t.assignedBy === 'object' ? t.assignedBy : null,
+          }
+        });
 
         console.log('ManagerTasksManagement: Processed team tasks:', processedTasks.length);
         setTeamTasks(processedTasks);
-          } catch (e) {
+      } catch (e) {
         console.warn('ManagerTasksManagement: Failed to fetch team tasks', e);
         setTeamTasks([]);
       }
@@ -320,20 +331,46 @@ export default function ManagerTasksManagement() {
     }
   }, [currentUser?.id, (currentUser as any)?.managedMemberIds?.join(','), departmentUsers.length, activeTab]);
 
-  // Combine department tasks and team tasks
-  const allTasks = [...departmentTasksOnly, ...teamTasks];
+  // Combine team tasks with locally created/edited tasks (team-only)
+  const allTasks = (() => {
+    const map = new Map<string, any>();
+    const noId: any[] = [];
 
-  // managerTasks for consistent task management
-  const managerTasks = tasks;
+    const addTask = (task: any) => {
+      const id = task?.id || task?._id;
+      if (!id) {
+        noId.push(task);
+        return;
+      }
+      map.set(String(id), task);
+    };
 
-  // Get team members for manager filtering
-  const teamMembers = mockUsers.filter(user => user.managerId === currentUser?.id);
+    teamTasks.forEach(addTask);
+    normalizedLocalTasks.forEach(addTask);
+
+    return [...map.values(), ...noId];
+  })();
+
+  // Get team members for manager filtering - prefer actual department users filtered by managerId
+  const teamMembers = Array.isArray(departmentUsers) && departmentUsers.length > 0
+    ? departmentUsers.filter((user: any) => String(user.managerId) === String(currentUser?.id))
+    : mockUsers.filter(user => user.managerId === currentUser?.id);
 
   // Get tasks by category (from both department and team tasks)
   const recentTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'blocked' && !getTimeRemaining(t.dueDate).isOverdue);
   const completedTasks = allTasks.filter(t => t.status === 'completed');
   const overdueTasks = allTasks.filter(t => getTimeRemaining(t.dueDate).isOverdue && t.status !== 'completed' && t.status !== 'blocked');
   const blockedTasks = allTasks.filter(t => t.status === 'blocked');
+
+  // Debug logging for task counts
+  console.log('ManagerTasksManagement - Task counts:', {
+    allTasks: allTasks.length,
+    recentTasks: recentTasks.length,
+    completedTasks: completedTasks.length,
+    overdueTasks: overdueTasks.length,
+    blockedTasks: blockedTasks.length,
+    activeTab
+  });
 
   // Get current tab tasks
   const getCurrentTabTasks = () => {
@@ -349,16 +386,25 @@ export default function ManagerTasksManagement() {
   // Filter tasks based on current tab
   const filteredTasks = getCurrentTabTasks().filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+      task.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
-    const matchesAssignedBy = assignedByFilter === 'all' || 
-                             (assignedByFilter === 'super_admin' && task.assignedByRole === 'super_admin') ||
-                             (assignedByFilter === 'hod' && task.assignedByRole === 'department_head') ||
-                             (assignedByFilter === 'manager' && task.assignedByRole === 'manager');
+    const matchesAssignedTo = assignedToFilter === 'all' ||
+      (typeof task.assignedTo === 'string' ? task.assignedTo === assignedToFilter : (task.assignedTo?.id === assignedToFilter || task.assignedTo?._id === assignedToFilter));
 
-    return matchesSearch && matchesStatus && matchesPriority && matchesAssignedBy;
+    return matchesSearch && matchesStatus && matchesPriority && matchesAssignedTo;
   });
+
+  // Pagination Logic
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentTasks = filteredTasks.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredTasks.length / itemsPerPage);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, priorityFilter, assignedToFilter, activeTab]);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -389,10 +435,33 @@ export default function ManagerTasksManagement() {
     }
   };
 
+  // Resolve user reference(s) into a display object (supports arrays)
+  const resolveUserDisplay = (userField: any): { id: any; name: string | null } | null => {
+    if (!userField) return null;
+    if (Array.isArray(userField)) {
+      const resolved = userField.map(resolveUserDisplay).filter(Boolean) as Array<{ id: any; name: string | null }>;
+      if (!resolved.length) return null;
+      const names = resolved.map(r => r?.name).filter(Boolean).join(', ');
+      return { id: resolved[0]?.id, name: names || resolved[0]?.name || null };
+    }
+    if (typeof userField === 'object') {
+      const id = (userField as any)._id || (userField as any).id || null;
+      const name = (userField as any).name || (userField as any).fullName || (((userField as any).firstName || '') + ' ' + ((userField as any).lastName || '')).trim() || (userField as any).email || (userField as any).username || null;
+      return { id, name };
+    }
+    if (typeof userField === 'string') {
+      const found = mockUsers.find(u => String(u.id) === String(userField) || String((u as any)._id) === String(userField));
+      if (found) return { id: found.id || (found as any)._id, name: found.name || (found as any).fullName || found.email };
+      return { id: userField, name: userField };
+    }
+    return null;
+  };
+
   const getAssignedByIcon = (assignedByRole?: string) => {
     switch (assignedByRole) {
       case 'super_admin': return <Crown className="h-4 w-4" />;
       case 'department_head': return <Shield className="h-4 w-4" />;
+      case 'admin': return <Shield className="h-4 w-4" />;
       case 'manager': return <User className="h-4 w-4" />;
       default: return <User className="h-4 w-4" />;
     }
@@ -402,6 +471,7 @@ export default function ManagerTasksManagement() {
     switch (assignedByRole) {
       case 'super_admin': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
       case 'department_head': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+      case 'admin': return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200';
       case 'manager': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
@@ -411,6 +481,7 @@ export default function ManagerTasksManagement() {
     switch (assignedByRole) {
       case 'super_admin': return 'Super Admin';
       case 'department_head': return 'HOD';
+      case 'admin': return 'Admin';
       case 'manager': return 'Manager';
       default: return 'Unknown';
     }
@@ -463,14 +534,14 @@ export default function ManagerTasksManagement() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Team Task Management</h1>
             <p className="text-muted-foreground">
-              Manage tasks assigned to your department and team members
+              Manage tasks assigned to your team members
             </p>
           </div>
           <div className="w-12 h-12 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm">
             <ClipboardList className="w-6 h-6 text-white" />
           </div>
         </div>
-        
+
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h3 className="text-lg font-medium mb-2">Loading Team Tasks</h3>
@@ -487,7 +558,7 @@ export default function ManagerTasksManagement() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Team Task Management</h1>
           <p className="text-muted-foreground">
-            Manage tasks assigned to your department and team members
+            Manage tasks assigned to your team members
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -597,15 +668,19 @@ export default function ManagerTasksManagement() {
                 </SelectContent>
               </Select>
 
-              <Select value={assignedByFilter} onValueChange={setAssignedByFilter}>
+              <Select value={assignedToFilter} onValueChange={setAssignedToFilter}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Filter by assigned by" />
+                  <SelectValue placeholder="Filter by team member" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Assignments</SelectItem>
-                  <SelectItem value="super_admin">Super Admin</SelectItem>
-                  <SelectItem value="hod">HOD</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="all">All User</SelectItem>
+                  {teamMembers
+                    .filter((member: any) => String(member.id || member._id) !== String(currentUser?.id))
+                    .map((member: any) => (
+                      <SelectItem key={member.id || member._id} value={member.id || member._id}>
+                        {member.name || member.fullName || member.email}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -626,7 +701,7 @@ export default function ManagerTasksManagement() {
                       {activeTab === 'blocked' && 'No blocked tasks found'}
                     </h3>
                     <p className="text-muted-foreground">
-                      {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || assignedByFilter !== 'all'
+                      {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || assignedToFilter !== 'all'
                         ? 'Try adjusting your search filters'
                         : activeTab === 'recent'
                           ? 'No active tasks assigned to your team'
@@ -640,252 +715,310 @@ export default function ManagerTasksManagement() {
                     </p>
                   </div>
                 ) : (
-                  filteredTasks.map((task) => {
-                  // Use populated user data if available, otherwise lookup in mockUsers
-                  const assignedUser = task.assignedToUser ||
-                    mockUsers.find(u => u.id === task.assignedTo) ||
-                    (task.assignedTo ? { id: task.assignedTo, name: 'Unknown User', email: '' } : null);
+                  currentTasks.map((task) => {
+                    // Use populated user data if available, otherwise lookup in mockUsers
+                    const assignedUsersResolved = resolveUserDisplay(
+                      (task as any).assignedToList && (task as any).assignedToList.length
+                        ? (task as any).assignedToList
+                        : (task.assignedToUser || task.assignedTo)
+                    );
 
-                  const assignedByUser = task.assignedByUser ||
-                    mockUsers.find(u => u.id === task.assignedBy) ||
-                    (task.assignedBy ? { id: task.assignedBy, name: 'Unknown User', email: '' } : null);
+                    const assignedByUser = resolveUserDisplay(task.assignedByUser || task.assignedBy) ||
+                      resolveUserDisplay(mockUsers.find(u => u.id === task.assignedBy)) ||
+                      null;
+                    const assignedByLabel = assignedByUser?.name || (task.assignedByRole ? formatAssignedByRole(task.assignedByRole) : 'Unknown');
 
-                  const timeRemaining = getTimeRemaining(task.dueDate);
-                  const createdDate = getCreatedDate(task.createdAt);
-                  
-                  return (
-                    <Card key={task.id} className={`hover:shadow-md transition-shadow ${
-                      task.status === 'completed'
+                    const timeRemaining = getTimeRemaining(task.dueDate);
+                    const createdDate = getCreatedDate(task.createdAt);
+
+                    return (
+                      <Card key={task.id} className={`hover:shadow-md transition-shadow ${task.status === 'completed'
                         ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
-                        : task.assignedByRole === 'super_admin' 
-                          ? 'border-red-200 dark:border-red-800 bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-950/10 dark:to-orange-950/10' 
+                        : task.assignedByRole === 'super_admin'
+                          ? 'border-red-200 dark:border-red-800 bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-950/10 dark:to-orange-950/10'
                           : timeRemaining.isOverdue
                             ? 'border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50/50 to-red-50/50 dark:from-orange-950/10 dark:to-red-950/10'
                             : ''
-                    }`}>
-                      <CardContent className="p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className={`font-semibold text-lg ${task.status === 'completed' ? 'text-green-700 dark:text-green-300' : ''}`}>
-                                {task.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-green-500 inline mr-1" />}
-                                {task.title}
-                              </h3>
-                              <Badge variant={getPriorityColor(task.priority)} className="text-xs">
-                                {task.priority}
-                              </Badge>
-                              <Badge variant={getStatusColor(task.status)} className="text-xs flex items-center gap-1">
-                                {getStatusIcon(task.status)}
-                                {task.status.replace('_', ' ')}
-                              </Badge>
-                              {task.assignedByRole === 'super_admin' && (
-                                <Badge className={`text-xs flex items-center gap-1 ${getAssignedByColor(task.assignedByRole)}`}>
-                                  {getAssignedByIcon(task.assignedByRole)}
-                                  Super Admin Task
+                        }`}>
+                        <CardContent className="p-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 className={`font-semibold text-lg ${task.status === 'completed' ? 'text-green-700 dark:text-green-300' : ''}`}>
+                                  {task.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-green-500 inline mr-1" />}
+                                  {task.title}
+                                </h3>
+                                <Badge variant={getPriorityColor(task.priority)} className="text-xs">
+                                  {task.priority}
                                 </Badge>
-                              )}
-                              {/* Removed duplicate green "✓ Completed" badge to keep only status badge */}
-                            </div>
-                            <p className={`text-sm mb-4 ${task.status === 'completed' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-                              {task.description}
-                            </p>
-                          </div>
-                          
-                          {/* Status Selector */}
-                          <div className="flex items-center gap-2 ml-4">
-                            <Select
-                              value={task.status}
-                              onValueChange={(value) => updateTaskStatus(task.id, value)}
-                            >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="assigned">Assigned</SelectItem>
-                                <SelectItem value="in_progress">In Progress</SelectItem>
-                                <SelectItem value="completed">Completed</SelectItem>
-                                <SelectItem value="blocked">Blocked</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            {/* Show edit button only if current user created this task */}
-                            {task.assignedBy === currentUser?.id && (
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => {
-                                  setEditingTask(task);
-                                  setShowEditDialog(true);
-                                }}
-                              >
-                                <Edit3 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="font-medium">Assigned to:</p>
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-6 w-6">
-                                  <AvatarFallback className="text-xs">
-                                    {assignedUser?.name.split(' ').map(n => n[0]).join('') || 'UN'}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <span>{assignedUser?.name || 'Unknown'}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="font-medium">Created:</p>
-                              <p className="text-muted-foreground">{createdDate}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Timer className={`h-4 w-4 ${task.status === 'completed' || task.status === 'blocked' ? 'text-muted-foreground' : timeRemaining.color}`} />
-                            <div>
-                              <p className="font-medium">Due Date:</p>
-                              <div className="flex items-center gap-1">
-                                <p className="text-muted-foreground">{formatDate(task.dueDate)}</p>
-                                {task.status !== 'completed' && task.status !== 'blocked' && (
-                                  <Badge
-                                    variant={timeRemaining.isOverdue ? "destructive" : "outline"}
-                                    className={`text-xs ${timeRemaining.color}`}
-                                  >
-                                    {timeRemaining.isOverdue ? '🚨 Overdue' : `⏰ ${timeRemaining.text}`}
+                                <Badge variant={getStatusColor(task.status)} className="text-xs flex items-center gap-1">
+                                  {getStatusIcon(task.status)}
+                                  {task.status.replace('_', ' ')}
+                                </Badge>
+                                {task.assignedByRole === 'super_admin' && (
+                                  <Badge className={`text-xs flex items-center gap-1 ${getAssignedByColor(task.assignedByRole)}`}>
+                                    {getAssignedByIcon(task.assignedByRole)}
+                                    Super Admin Task
                                   </Badge>
                                 )}
+                                {/* Removed duplicate green "✓ Completed" badge to keep only status badge */}
                               </div>
+                              <p className={`text-sm mb-4 ${task.status === 'completed' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                                {task.description}
+                              </p>
                             </div>
-                          </div>
 
-                          <div className="flex items-center gap-2">
-                            {getAssignedByIcon(task.assignedByRole)}
-                            <div>
-                              <p className="font-medium">Assigned by:</p>
-                              <div className="flex items-center gap-2">
-                                <p className="text-muted-foreground">{assignedByUser?.name || 'Unknown'}</p>
-                                <Badge className={`text-xs ${getAssignedByColor(task.assignedByRole)}`}>
-                                  {formatAssignedByRole(task.assignedByRole)}
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Attachments Section */}
-                        {task.attachments && task.attachments.length > 0 && (
-                          <div className="mt-4 pt-4 border-t">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Paperclip className="h-4 w-4 text-muted-foreground" />
-                              <p className="font-medium text-sm">Attachments ({task.attachments.length})</p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {task.attachments.map((attachment) => (
-                                <div
-                                  key={attachment.id}
-                                  className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border text-xs"
+                            {/* Status Selector */}
+                            <div className="flex items-center gap-2 ml-4">
+                              <Select
+                                value={task.status}
+                                onValueChange={(value) => updateTaskStatus(task.id, value)}
+                              >
+                                <SelectTrigger className="w-32">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="assigned">Assigned</SelectItem>
+                                  <SelectItem value="in_progress">In Progress</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                  <SelectItem value="blocked">Blocked</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {/* Show edit button only if current user created this task */}
+                              {task.assignedBy === currentUser?.id && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingTask(task);
+                                    setShowEditDialog(true);
+                                  }}
                                 >
-                                  <File className="h-3 w-3 text-muted-foreground" />
-                                  <span className="truncate max-w-32">{attachment.name}</span>
-                                  <span className="text-muted-foreground">
-                                    ({Math.round(attachment.size / 1024)}KB)
-                                  </span>
-                                </div>
-                              ))}
+                                  <Edit3 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </div>
-                        )}
-                        
-                        <div className="flex items-center justify-between pt-4 border-t mt-4">
-                          <div className="text-xs text-muted-foreground">
-                            Updated: {formatDate(task.updatedAt)}
+
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-muted-foreground" />
+                              <div>
+                                <p className="font-medium">Assigned to:</p>
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="h-6 w-6">
+                                    <AvatarFallback className="text-xs">
+                                      {(() => {
+                                        const name = assignedUsersResolved?.name || 'UN';
+                                        // If multiple users (comma separated), take the first one
+                                        const firstName = name.split(',')[0].trim();
+                                        return firstName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                                      })()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span>{assignedUsersResolved?.name || 'Unknown'}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                              <div>
+                                <p className="font-medium">Created:</p>
+                                <p className="text-muted-foreground">{createdDate}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Timer className={`h-4 w-4 ${task.status === 'completed' || task.status === 'blocked' ? 'text-muted-foreground' : timeRemaining.color}`} />
+                              <div>
+                                <p className="font-medium">Due Date:</p>
+                                <div className="flex items-center gap-1">
+                                  <p className="text-muted-foreground">{formatDate(task.dueDate)}</p>
+                                  {task.status !== 'completed' && task.status !== 'blocked' && (
+                                    <Badge
+                                      variant={timeRemaining.isOverdue ? "destructive" : "outline"}
+                                      className={`text-xs ${timeRemaining.color}`}
+                                    >
+                                      {timeRemaining.isOverdue ? '🚨 Overdue' : `⏰ ${timeRemaining.text}`}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+
+                            <div className="flex items-center gap-2">
+                              {getAssignedByIcon(task.assignedByRole)}
+                              <div>
+                                <p className="font-medium">Assigned by:</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-muted-foreground">{assignedByLabel}</p>
+                                  <Badge className={`text-xs ${getAssignedByColor(task.assignedByRole)}`}>
+                                    {formatAssignedByRole(task.assignedByRole)}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Dialog open={showTaskDetailsDialog && selectedTask?.id === task.id} onOpenChange={setShowTaskDetailsDialog}>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => {
-                                  setSelectedTask(task);
-                                  setShowTaskDetailsDialog(true);
-                                }}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Details
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-2xl">
-                                <DialogHeader>
-                                  <DialogTitle className="flex items-center gap-2">
-                                    <ClipboardList className="h-5 w-5" />
-                                    Task Details
-                                  </DialogTitle>
-                                </DialogHeader>
-                                {selectedTask && (
-                                  <div className="space-y-4">
-                                    <div>
-                                      <h3 className="font-semibold text-lg">{selectedTask.title}</h3>
-                                      <p className="text-sm text-muted-foreground mt-1">{selectedTask.description}</p>
+
+                          {/* Attachments Section */}
+                          {
+                            task.attachments && task.attachments.length > 0 && (
+                              <div className="mt-4 pt-4 border-t">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                                  <p className="font-medium text-sm">Attachments ({task.attachments.length})</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {task.attachments.map((attachment) => (
+                                    <a
+                                      key={attachment.id}
+                                      href={attachment.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border text-xs hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                                    >
+                                      <File className="h-3 w-3 text-muted-foreground" />
+                                      <span className="truncate max-w-32">{attachment.name}</span>
+                                      <span className="text-muted-foreground">
+                                        ({Math.round(attachment.size / 1024)}KB)
+                                      </span>
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          <div className="flex items-center justify-between pt-4 border-t mt-4">
+                            <div className="text-xs text-muted-foreground">
+                              Updated: {formatDate(task.updatedAt)}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  setDiscussionTask(task);
+                                  setShowDiscussionDialog(true);
+                                }}
+                                className="flex items-center gap-1"
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                                <span className="hidden sm:inline">Discussion</span>
+                                <span className="sm:hidden">Chat</span>
+                              </Button>
+                              <Dialog open={showTaskDetailsDialog && selectedTask?.id === task.id} onOpenChange={setShowTaskDetailsDialog}>
+                                <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => {
+                                    setSelectedTask(task);
+                                    setShowTaskDetailsDialog(true);
+                                  }}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-2xl">
+                                  <DialogHeader>
+                                    <DialogTitle className="flex items-center gap-2">
+                                      <ClipboardList className="h-5 w-5" />
+                                      Task Details
+                                    </DialogTitle>
+                                  </DialogHeader>
+                                  {selectedTask && (
+                                    <div className="space-y-4">
+                                      <div>
+                                        <h3 className="font-semibold text-lg">{selectedTask.title}</h3>
+                                        <p className="text-sm text-muted-foreground mt-1">{selectedTask.description}</p>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <p className="font-medium">Status</p>
+                                          <Badge variant={getStatusColor(selectedTask.status)}>
+                                            {selectedTask.status.replace('_', ' ')}
+                                          </Badge>
+                                        </div>
+                                        <div>
+                                          <p className="font-medium">Priority</p>
+                                          <Badge variant={getPriorityColor(selectedTask.priority)}>
+                                            {selectedTask.priority}
+                                          </Badge>
+                                        </div>
+                                        <div>
+                                          <p className="font-medium">Assigned to</p>
+                                          <p className="text-sm">
+                                            {selectedTask.assignedToUser?.name ||
+                                              mockUsers.find(u => u.id === selectedTask.assignedTo)?.name ||
+                                              'Unknown'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="font-medium">Due Date</p>
+                                          <p className="text-sm">{formatDate(selectedTask.dueDate)}</p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex justify-end">
+                                        <Button variant="outline" onClick={() => {
+                                          setShowTaskDetailsDialog(false);
+                                          setSelectedTask(null);
+                                        }}>
+                                          Close
+                                        </Button>
+                                      </div>
                                     </div>
-                                    
-                                    <div className="grid grid-cols-2 gap-4">
-                                      <div>
-                                        <p className="font-medium">Status</p>
-                                        <Badge variant={getStatusColor(selectedTask.status)}>
-                                          {selectedTask.status.replace('_', ' ')}
-                                        </Badge>
-                                      </div>
-                                      <div>
-                                        <p className="font-medium">Priority</p>
-                                        <Badge variant={getPriorityColor(selectedTask.priority)}>
-                                          {selectedTask.priority}
-                                        </Badge>
-                                      </div>
-                                      <div>
-                                        <p className="font-medium">Assigned to</p>
-                                        <p className="text-sm">
-                                          {selectedTask.assignedToUser?.name || 
-                                           mockUsers.find(u => u.id === selectedTask.assignedTo)?.name || 
-                                           'Unknown'}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="font-medium">Due Date</p>
-                                        <p className="text-sm">{formatDate(selectedTask.dueDate)}</p>
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="flex justify-end">
-                                      <Button variant="outline" onClick={() => {
-                                        setShowTaskDetailsDialog(false);
-                                        setSelectedTask(null);
-                                      }}>
-                                        Close
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
-                              </DialogContent>
-                            </Dialog>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
+                            </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })
+                        </CardContent >
+                      </Card >
+                    );
+                  })
                 )}
               </div>
-            </TabsContent>
-          </CardContent>
-        </Card>
-      </Tabs>
+
+              {/* Pagination Controls */}
+              {filteredTasks.length > itemsPerPage && (
+                <div className="flex items-center justify-between border-t pt-4 mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredTasks.length)} of {filteredTasks.length} tasks
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <div className="text-sm font-medium">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent >
+          </CardContent >
+        </Card >
+      </Tabs >
 
       {/* Edit Task Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      < Dialog open={showEditDialog} onOpenChange={setShowEditDialog} >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -897,17 +1030,17 @@ export default function ManagerTasksManagement() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Task Title</label>
-                <Input 
-                  value={editingTask.title} 
-                  onChange={(e) => setEditingTask({...editingTask, title: e.target.value})}
+                <Input
+                  value={editingTask.title}
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
                   className="mt-1"
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">Description</label>
-                <Textarea 
-                  value={editingTask.description} 
-                  onChange={(e) => setEditingTask({...editingTask, description: e.target.value})}
+                <Textarea
+                  value={editingTask.description}
+                  onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
                   className="mt-1"
                   rows={3}
                 />
@@ -915,9 +1048,9 @@ export default function ManagerTasksManagement() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Priority</label>
-                  <Select 
-                    value={editingTask.priority} 
-                    onValueChange={(value) => setEditingTask({...editingTask, priority: value})}
+                  <Select
+                    value={editingTask.priority}
+                    onValueChange={(value) => setEditingTask({ ...editingTask, priority: value })}
                   >
                     <SelectTrigger className="mt-1">
                       <SelectValue />
@@ -932,7 +1065,7 @@ export default function ManagerTasksManagement() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">Due Date</label>
-                  <Input 
+                  <Input
                     type="date"
                     value={editingTask.dueDate ? (() => {
                       // Fix timezone issue by using local date
@@ -948,9 +1081,9 @@ export default function ManagerTasksManagement() {
                       if (dateValue) {
                         const [year, month, day] = dateValue.split('-').map(Number);
                         const localDate = new Date(year, month - 1, day);
-                        setEditingTask({...editingTask, dueDate: localDate});
+                        setEditingTask({ ...editingTask, dueDate: localDate });
                       } else {
-                        setEditingTask({...editingTask, dueDate: null});
+                        setEditingTask({ ...editingTask, dueDate: null });
                       }
                     }}
                     className="mt-1"
@@ -958,18 +1091,18 @@ export default function ManagerTasksManagement() {
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-4">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setShowEditDialog(false)}
                   disabled={isUpdating}
                 >
                   Cancel
                 </Button>
-                <Button 
+                <Button
                   onClick={async () => {
                     try {
                       setIsUpdating(true);
-                      
+
                       // Prepare update data
                       const updateData = {
                         title: editingTask.title,
@@ -984,19 +1117,19 @@ export default function ManagerTasksManagement() {
                           return `${year}-${month}-${day}`;
                         })() : null
                       };
-                      
+
                       // Call backend API to update task
                       await taskService.updateTask(editingTask.id, updateData);
-                      
+
                       // Update local state
-                      setTasks(prev => prev.map(t => 
+                      setTasks(prev => prev.map(t =>
                         t.id === editingTask.id ? { ...t, ...updateData } : t
                       ));
-                      
+
                       // Close dialog
                       setShowEditDialog(false);
                       setEditingTask(null);
-                      
+
                       console.log('Task updated successfully');
                     } catch (error) {
                       console.error('Failed to update task:', error);
@@ -1020,7 +1153,17 @@ export default function ManagerTasksManagement() {
             </div>
           )}
         </DialogContent>
-      </Dialog>
-    </div>
+      </Dialog >
+      <TaskDiscussionDialog
+        open={showDiscussionDialog}
+        task={discussionTask}
+        onClose={() => {
+          setShowDiscussionDialog(false);
+          setDiscussionTask(null);
+        }}
+        currentUserId={currentUser?.id}
+        currentUserRole={currentUser?.role}
+      />
+    </div >
   );
 }

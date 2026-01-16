@@ -68,6 +68,19 @@ export default function HRDashboard() {
     companyTasks: [],
   } as HRDashboardData);
   const [isLoading, setIsLoading] = useState(true);
+  const recentTasks = Array.isArray(dashboardData.recentTasks) ? dashboardData.recentTasks : [];
+  const recentLeaves = Array.isArray(dashboardData.recentLeaves) ? dashboardData.recentLeaves : [];
+
+  const safeFormatDate = (value: any, pattern: string, fallback = '—') => {
+    if (!value) return fallback;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return fallback;
+    try {
+      return format(date, pattern);
+    } catch {
+      return fallback;
+    }
+  };
 
   // Fetch latest 5 departments for overview
   const { data: latestDepartments = [] } = useQuery({
@@ -308,8 +321,10 @@ export default function HRDashboard() {
           </CardHeader>
           <CardContent className="p-4">
             <div className="space-y-2">
-              {dashboardData.recentTasks.length > 0 ? (
-                dashboardData.recentTasks.slice(0, 10).map((task: any, index: number) => {
+              {recentTasks.length > 0 ? (
+                recentTasks.slice(0, 10).map((task: any, index: number) => {
+                  const taskStatus = task.status || 'unknown';
+                  const taskPriority = task.priority || 'medium';
                   const getPriorityColor = (priority: string) => {
                     switch (priority) {
                       case 'urgent': return 'bg-red-500 text-white';
@@ -334,29 +349,29 @@ export default function HRDashboard() {
                   <div key={index} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-500 hover:shadow-sm dark:hover:shadow-lg transition-all duration-200">
                     <div className="flex items-start gap-3">
                       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                        task.status === 'in_progress' ? 'bg-blue-100 dark:bg-blue-900/30' :
-                        task.status === 'review' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
-                        task.status === 'todo' ? 'bg-gray-100 dark:bg-gray-800' :
-                        task.status === 'assigned' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-gray-800'
+                        taskStatus === 'in_progress' ? 'bg-blue-100 dark:bg-blue-900/30' :
+                        taskStatus === 'review' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+                        taskStatus === 'todo' ? 'bg-gray-100 dark:bg-gray-800' :
+                        taskStatus === 'assigned' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-gray-100 dark:bg-gray-800'
                       }`}>
-                        {task.status === 'in_progress' && <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
-                        {task.status === 'review' && <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />}
-                        {task.status === 'todo' && <ClipboardList className="h-4 w-4 text-gray-600 dark:text-gray-400" />}
-                        {task.status === 'assigned' && <UserCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
+                        {taskStatus === 'in_progress' && <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                        {taskStatus === 'review' && <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />}
+                        {taskStatus === 'todo' && <ClipboardList className="h-4 w-4 text-gray-600 dark:text-gray-400" />}
+                        {taskStatus === 'assigned' && <UserCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm line-clamp-1">{task.title}</h4>
+                        <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm line-clamp-1">{task.title || 'Untitled Task'}</h4>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
-                            {task.priority}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(taskPriority)}`}>
+                            {taskPriority}
                           </span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(task.status)}`}>
-                            {task.status.replace('_', ' ')}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(taskStatus)}`}>
+                            {taskStatus.replace('_', ' ')}
                           </span>
                         </div>
                         <div className="mt-1 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
                           <Calendar className="h-3 w-3" />
-                          <span>{format(new Date(task.createdAt), 'MMM dd, yyyy')}</span>
+                          <span>{safeFormatDate(task.createdAt, 'MMM dd, yyyy')}</span>
                         </div>
                       </div>
                     </div>
@@ -396,14 +411,14 @@ export default function HRDashboard() {
             <div className="space-y-2">
               {latestDepartments.length > 0 ? (
                 latestDepartments.map((dept: any, index: number) => (
-                 <div key={dept.id || index} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-700 hover:border-emerald-200 dark:hover:border-emerald-500 hover:shadow-sm dark:hover:shadow-lg transition-all duration-200">
+                 <div key={dept.id || dept._id || index} className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-gray-100 dark:border-slate-700 hover:border-emerald-200 dark:hover:border-emerald-500 hover:shadow-sm dark:hover:shadow-lg transition-all duration-200">
                    <div className="flex items-center justify-between">
                      <div>
                        <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm">{dept.name}</h4>
                        <p className="text-xs text-gray-500 dark:text-gray-400">{dept.memberCount || 0} employees</p>
                      </div>
                      <div className="text-xs text-gray-400 dark:text-gray-500">
-                       {format(new Date(dept.createdAt), 'MMM dd')}
+                       {safeFormatDate(dept.createdAt, 'MMM dd')}
                      </div>
                    </div>
                  </div>
@@ -439,8 +454,8 @@ export default function HRDashboard() {
           </CardHeader>
           <CardContent className="p-4">
             <div className="space-y-2">
-              {dashboardData.recentLeaves.filter((leave: any) => leave.status === 'pending').length > 0 ? (
-                dashboardData.recentLeaves
+              {recentLeaves.filter((leave: any) => leave.status === 'pending').length > 0 ? (
+                recentLeaves
                   .filter((leave: any) => leave.status === 'pending')
                   .slice(0, 10)
                   .map((leave: any, index: number) => (
@@ -451,7 +466,7 @@ export default function HRDashboard() {
                        </div>
                        <div className="flex-1 min-w-0">
                          <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm line-clamp-1">
-                           {leave.user?.firstName} {leave.user?.lastName}
+                           {leave.user?.firstName || 'User'} {leave.user?.lastName || ''}
                          </h4>
                          <div className="flex items-center gap-2 mt-1">
                            <span className="text-xs text-gray-500 dark:text-gray-400">{leave.type}</span>
@@ -461,7 +476,7 @@ export default function HRDashboard() {
                          </div>
                          <div className="flex items-center gap-1 mt-1 text-xs text-gray-500 dark:text-gray-400">
                            <Calendar className="h-3 w-3" />
-                           <span>{format(new Date(leave.createdAt), 'MMM dd, yyyy')}</span>
+                           <span>{safeFormatDate(leave.createdAt || leave.appliedAt, 'MMM dd, yyyy')}</span>
                          </div>
                        </div>
                      </div>

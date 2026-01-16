@@ -132,7 +132,12 @@ export default function HRManagerTasksManagement() {
 
   // Function to add new task
   const handleAssignTask = (taskData: any) => {
-    setTasks(prevTasks => [...prevTasks, taskData]);
+    const createdTasks = Array.isArray(taskData)
+      ? taskData.filter(Boolean)
+      : (taskData ? [taskData] : []);
+    if (createdTasks.length) {
+      setTasks(prevTasks => [...prevTasks, ...createdTasks]);
+    }
     setShowAssignDialog(false);
   };
 

@@ -43,7 +43,7 @@ function NotificationStatus() {
       } else {
         newStatus.error = `HTTP ${response.status}`;
       }
-    } catch (error) {
+    } catch (error: any) {
       newStatus.error = error.message;
     }
 

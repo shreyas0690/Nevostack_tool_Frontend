@@ -4,11 +4,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, Legend
+  PieChart, Pie, Cell, AreaChart, Area, Legend
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, Users, CheckCircle, Clock, AlertCircle,
-  Calendar, Target, Award, Activity, Filter, BarChart3, PieChart as PieChartIcon,
+  TrendingUp, TrendingDown, Users, Clock, AlertCircle,
+  Target, Award, BarChart3, PieChart as PieChartIcon,
   LineChart as LineChartIcon, Activity as ActivityIcon
 } from 'lucide-react';
 import { analyticsService } from '@/services/analyticsService';
@@ -43,8 +43,8 @@ export default function AnalyticsDashboard() {
       </div>
     </div>
   );
-  // Fetch real analytics from backend (fallback to mocks)
-  const { data: overviewData, isLoading } = useQuery({
+  // Fetch real analytics from backend
+  const { data: overviewData, isLoading, error: overviewError } = useQuery({
     queryKey: ['analytics','overview'],
     queryFn: async () => {
       const res: any = await analyticsService.getOverview({});
@@ -54,7 +54,7 @@ export default function AnalyticsDashboard() {
   });
 
   // Fetch task status distribution with filtering
-  const { data: taskStatusData, isLoading: taskStatusLoading } = useQuery({
+  const { data: taskStatusData, isLoading: taskStatusLoading, error: taskStatusError } = useQuery({
     queryKey: ['analytics', 'task-status-distribution', taskStatusFilter, includeOverdue],
     queryFn: async () => {
       const res: any = await analyticsService.getTaskStatusDistribution({
@@ -67,17 +67,35 @@ export default function AnalyticsDashboard() {
     staleTime: 1000 * 60 * 5
   });
 
+  const formatStatusLabel = (value: string) => {
+    if (!value) return 'Unknown';
+    return value
+      .toString()
+      .replace(/[_-]+/g, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const normalizeStatus = (value: string) =>
+    String(value ?? '')
+      .toLowerCase()
+      .replace(/[_\s-]+/g, ' ')
+      .trim();
+
   // Process task status data with backend filtering
   const processTaskStatusData = () => {
     // Use backend filtered data if available, otherwise fallback to overview data
     if (taskStatusData && taskStatusData.taskStatusData && Array.isArray(taskStatusData.taskStatusData)) {
       return taskStatusData.taskStatusData.map((item: any) => ({
-        name: item.name,
+        name: formatStatusLabel(item.name),
         value: item.value,
-        color: item.color || (item.name === 'Completed' ? '#22c55e' : 
-                              item.name === 'In Progress' ? '#3b82f6' : 
-                              item.name === 'Assigned' ? '#f59e0b' : 
-                              item.name === 'Overdue' ? '#dc2626' : '#ef4444')
+        color: item.color || (normalizeStatus(item.name) === 'completed' ? '#22c55e' : 
+                              normalizeStatus(item.name) === 'in progress' ? '#3b82f6' : 
+                              normalizeStatus(item.name) === 'assigned' ? '#f59e0b' : 
+                              normalizeStatus(item.name) === 'overdue' ? '#dc2626' : '#ef4444')
       }));
     }
     
@@ -85,23 +103,27 @@ export default function AnalyticsDashboard() {
     if (!overviewData?.tasksByStatus) return [];
     
     let filteredData = Object.entries(overviewData.tasksByStatus).map(([k, v]) => ({ 
-      name: k, 
+      name: formatStatusLabel(k), 
       value: v as number, 
-      color: k === 'completed' ? '#22c55e' : k === 'in_progress' ? '#3b82f6' : k === 'assigned' ? '#f59e0b' : '#ef4444' 
+      color: normalizeStatus(k) === 'completed' ? '#22c55e' : normalizeStatus(k) === 'in progress' ? '#3b82f6' : normalizeStatus(k) === 'assigned' ? '#f59e0b' : '#ef4444' 
     }));
     
     // Apply status filter
-    if (taskStatusFilter !== 'all') {
-      filteredData = filteredData.filter(item => item.name === taskStatusFilter);
+    const normalizedFilter = normalizeStatus(taskStatusFilter);
+    if (normalizedFilter !== 'all') {
+      filteredData = filteredData.filter(item => normalizeStatus(item.name) === normalizedFilter);
     }
     
     // Add overdue tasks if requested
     if (includeOverdue && overviewData.overdue) {
-      filteredData.push({
-        name: 'overdue',
-        value: overviewData.overdue,
-        color: '#dc2626'
-      });
+      const hasOverdue = filteredData.some(item => normalizeStatus(item.name) === 'overdue');
+      if (!hasOverdue) {
+        filteredData.push({
+          name: formatStatusLabel('overdue'),
+          value: overviewData.overdue,
+          color: '#dc2626'
+        });
+      }
     }
     
     return filteredData;
@@ -162,68 +184,8 @@ export default function AnalyticsDashboard() {
       })
     : [];
 
-  // Performance Data
-  const weeklyData = [
-    { period: 'Mon', tasks: 12, completed: 10, productivity: 83 },
-    { period: 'Tue', tasks: 15, completed: 13, productivity: 87 },
-    { period: 'Wed', tasks: 18, completed: 16, productivity: 89 },
-    { period: 'Thu', tasks: 14, completed: 12, productivity: 86 },
-    { period: 'Fri', tasks: 16, completed: 15, productivity: 94 },
-    { period: 'Sat', tasks: 8, completed: 7, productivity: 88 },
-    { period: 'Sun', tasks: 5, completed: 4, productivity: 80 }
-  ];
-
-  const monthlyData = [
-    { period: 'Day 1', tasks: 15, completed: 12, productivity: 80 },
-    { period: 'Day 2', tasks: 18, completed: 16, productivity: 89 },
-    { period: 'Day 3', tasks: 12, completed: 10, productivity: 83 },
-    { period: 'Day 4', tasks: 20, completed: 18, productivity: 90 },
-    { period: 'Day 5', tasks: 16, completed: 14, productivity: 88 },
-    { period: 'Day 6', tasks: 8, completed: 7, productivity: 88 },
-    { period: 'Day 7', tasks: 10, completed: 8, productivity: 80 },
-    { period: 'Day 8', tasks: 14, completed: 13, productivity: 93 },
-    { period: 'Day 9', tasks: 17, completed: 15, productivity: 88 },
-    { period: 'Day 10', tasks: 19, completed: 17, productivity: 89 },
-    { period: 'Day 11', tasks: 13, completed: 11, productivity: 85 },
-    { period: 'Day 12', tasks: 21, completed: 19, productivity: 90 },
-    { period: 'Day 13', tasks: 16, completed: 15, productivity: 94 },
-    { period: 'Day 14', tasks: 9, completed: 8, productivity: 89 },
-    { period: 'Day 15', tasks: 11, completed: 9, productivity: 82 },
-    { period: 'Day 16', tasks: 18, completed: 16, productivity: 89 },
-    { period: 'Day 17', tasks: 22, completed: 20, productivity: 91 },
-    { period: 'Day 18', tasks: 15, completed: 14, productivity: 93 },
-    { period: 'Day 19', tasks: 17, completed: 15, productivity: 88 },
-    { period: 'Day 20', tasks: 19, completed: 18, productivity: 95 },
-    { period: 'Day 21', tasks: 12, completed: 10, productivity: 83 },
-    { period: 'Day 22', tasks: 14, completed: 12, productivity: 86 },
-    { period: 'Day 23', tasks: 20, completed: 18, productivity: 90 },
-    { period: 'Day 24', tasks: 16, completed: 15, productivity: 94 },
-    { period: 'Day 25', tasks: 18, completed: 17, productivity: 94 },
-    { period: 'Day 26', tasks: 13, completed: 12, productivity: 92 },
-    { period: 'Day 27', tasks: 15, completed: 13, productivity: 87 },
-    { period: 'Day 28', tasks: 21, completed: 20, productivity: 95 },
-    { period: 'Day 29', tasks: 17, completed: 16, productivity: 94 },
-    { period: 'Day 30', tasks: 19, completed: 18, productivity: 95 }
-  ];
-
-  const yearlyData = [
-    { period: 'Jan', tasks: 180, completed: 152, productivity: 84 },
-    { period: 'Feb', tasks: 208, completed: 176, productivity: 85 },
-    { period: 'Mar', tasks: 192, completed: 168, productivity: 88 },
-    { period: 'Apr', tasks: 244, completed: 220, productivity: 90 },
-    { period: 'May', tasks: 220, completed: 192, productivity: 87 },
-    { period: 'Jun', tasks: 268, completed: 248, productivity: 93 },
-    { period: 'Jul', tasks: 285, completed: 260, productivity: 91 },
-    { period: 'Aug', tasks: 265, completed: 240, productivity: 90 },
-    { period: 'Sep', tasks: 290, completed: 270, productivity: 93 },
-    { period: 'Oct', tasks: 275, completed: 250, productivity: 91 },
-    { period: 'Nov', tasks: 260, completed: 235, productivity: 90 },
-    { period: 'Dec', tasks: 280, completed: 260, productivity: 93 }
-  ];
-
-  const performanceData = performancePeriod === 'week' ? weeklyData : performancePeriod === 'month' ? monthlyData : yearlyData;
   // Fetch tasks timeseries for Performance Trend when possible
-  const { data: tasksSeries } = useQuery({
+  const { data: tasksSeries, isLoading: tasksSeriesLoading, error: tasksSeriesError } = useQuery({
     queryKey: ['analytics','tasksSeries', performancePeriod],
     queryFn: async () => {
       // map performancePeriod to groupBy
@@ -238,11 +200,6 @@ export default function AnalyticsDashboard() {
   // Map backend timeseries (expects { date, total, completed }) into chart shape
   const trendData = tasksSeries && tasksSeries.length > 0
     ? tasksSeries.map((r: any) => ({ period: new Date(r.date).toLocaleDateString(), tasks: r.total || r.count || 0, completed: r.completed || 0 }))
-    : performanceData;
-
-  // Leave Analytics (from backend if available)
-  const leaveByType = overviewData && overviewData.leavesByType
-    ? Object.entries(overviewData.leavesByType).map(([k, v]) => ({ name: k, value: v as number, color: '#3b82f6' }))
     : [];
 
   // Key Metrics
@@ -264,38 +221,39 @@ export default function AnalyticsDashboard() {
     }
     return overviewData?.tasksByPriority?.urgent || overviewData?.urgentTasks || 0;
   })();
-  const overdueTasks = overviewData?.overdue || overviewData?.overdue || 0;
+  const overdueTasks = overviewData?.overdue || 0;
 
-  const keyMetrics = [
+  type KeyMetric = {
+    title: string;
+    value: string | number;
+    icon: any;
+    color: string;
+    change?: string | null;
+    trend?: 'up' | 'down';
+  };
+
+  const keyMetrics: KeyMetric[] = [
     {
       title: 'Overall Completion Rate',
       value: `${totalCompletionRate}%`,
-      change: '+5.2%',
-      trend: 'up',
       icon: Target,
       color: 'text-green-600'
     },
     {
       title: 'Avg Tasks per User',
       value: avgTasksPerUser,
-      change: '+2.1%',
-      trend: 'up',
       icon: Users,
       color: 'text-blue-600'
     },
     {
       title: 'Urgent Tasks',
       value: urgentTasks,
-      change: '-12%',
-      trend: 'down',
       icon: AlertCircle,
       color: 'text-red-600'
     },
     {
       title: 'Overdue Tasks',
       value: overdueTasks,
-      change: '-8%',
-      trend: 'down',
       icon: Clock,
       color: 'text-orange-600'
     }
@@ -304,6 +262,23 @@ export default function AnalyticsDashboard() {
   // Show loading state
   if (isLoading || taskStatusLoading) {
     return <LoadingSpinner />;
+  }
+
+  const hasErrors = Boolean(overviewError) || Boolean(taskStatusError) || Boolean(tasksSeriesError);
+  const showErrorState = (Boolean(overviewError) || Boolean(taskStatusError)) && !overviewData && !taskStatusData;
+
+  if (showErrorState) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center">
+          <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Analytics load failed</h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400">Please try again or check your connection.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -330,11 +305,21 @@ export default function AnalyticsDashboard() {
         </div>
       </div>
 
+      {hasErrors && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/20 p-3 sm:p-4 text-amber-900 dark:text-amber-100">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            <p className="text-xs sm:text-sm">Analytics data could not be fully loaded. Some charts may be incomplete.</p>
+          </div>
+        </div>
+      )}
+
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {keyMetrics.map((metric) => {
           const Icon = metric.icon;
-          const TrendIcon = metric.trend === 'up' ? TrendingUp : TrendingDown;
+          const hasChange = metric.change != null && metric.trend != null;
+          const TrendIcon = metric.trend === 'down' ? TrendingDown : TrendingUp;
           return (
             <Card key={metric.title} className="border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -347,10 +332,12 @@ export default function AnalyticsDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{metric.value}</div>
-                <div className="flex items-center text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  <TrendIcon className={`h-3 w-3 mr-1 ${metric.trend === 'up' ? 'text-green-500' : 'text-red-500'}`} />
-                  {metric.change} from last month
-                </div>
+                {hasChange && (
+                  <div className="flex items-center text-xs text-slate-600 dark:text-slate-400 mt-1">
+                    <TrendIcon className={`h-3 w-3 mr-1 ${metric.trend === 'up' ? 'text-green-500' : 'text-red-500'}`} />
+                    {metric.change} from last month
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -379,31 +366,41 @@ export default function AnalyticsDashboard() {
               </CardHeader>
               <CardContent className="p-3 sm:p-4 lg:p-6">
                 <div className="h-56 sm:h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={tasksByStatus}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#ef4444"
-                      dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {tasksByStatus.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                  {tasksByStatus.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                      No status data available.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={tasksByStatus}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={45}
+                          outerRadius={90}
+                          paddingAngle={2}
+                        >
+                          {tasksByStatus.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: 'white',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Legend
+                          verticalAlign="bottom"
+                          height={32}
+                          wrapperStyle={{ fontSize: '12px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -486,23 +483,33 @@ export default function AnalyticsDashboard() {
               </CardHeader>
               <CardContent className="p-3 sm:p-4 lg:p-6">
                 <div className="h-56 sm:h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendData && trendData.length > 0 ? trendData : performanceData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="period" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip 
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                    />
-                    <Area type="monotone" dataKey="tasks" stackId="1" stroke="#ef4444" fill="#ef4444" name="Total Tasks" />
-                    <Area type="monotone" dataKey="completed" stackId="1" stroke="#10b981" fill="#10b981" name="Completed Tasks" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                  {tasksSeriesLoading ? (
+                    <div className="flex h-full items-center justify-center text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                      Loading trend data...
+                    </div>
+                  ) : trendData.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                      No trend data available for this period.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={trendData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: 'white',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Area type="monotone" dataKey="tasks" stackId="1" stroke="#ef4444" fill="#ef4444" name="Total Tasks" />
+                        <Area type="monotone" dataKey="completed" stackId="1" stroke="#10b981" fill="#10b981" name="Completed Tasks" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </CardContent>
             </Card>

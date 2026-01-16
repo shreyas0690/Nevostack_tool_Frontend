@@ -13,11 +13,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { 
-  Video, 
-  Calendar, 
-  Clock, 
-  Users, 
+import {
+  Video,
+  Calendar,
+  Clock,
+  Users,
   Plus,
   ExternalLink,
   Search,
@@ -45,7 +45,7 @@ import { Meeting, MeetingStatus } from '@/types/meetings';
 
 export default function HODMeetingsManagement() {
   const { currentUser } = useAuth();
-  
+
   // State management
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -57,6 +57,21 @@ export default function HODMeetingsManagement() {
   const [updatingMeetingId, setUpdatingMeetingId] = useState<string | null>(null);
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
+  // Reset pagination when filters change
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
+  };
+
   // Form state for scheduling meetings
   const [meetingForm, setMeetingForm] = useState({
     title: '',
@@ -66,9 +81,94 @@ export default function HODMeetingsManagement() {
     endTime: '',
     duration: 60,
     meetingLink: '',
+    meetingType: 'physical' as 'physical' | 'virtual' | 'hybrid',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     selectedAttendees: [] as string[],
     status: 'scheduled' as MeetingStatus
   });
+
+  const toId = (value: any) => {
+    if (!value && value !== 0) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') return String(value._id || value.id || value);
+    return String(value);
+  };
+
+  const toLocalInputValue = (date: Date) => {
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
+  const normalizeMeetingType = (meeting: any): 'physical' | 'virtual' | 'hybrid' => {
+    const rawType = meeting?.type;
+    if (rawType === 'physical' || rawType === 'virtual' || rawType === 'hybrid') {
+      return rawType;
+    }
+    if (meeting?.meetingLink || meeting?.location?.virtual?.meetingUrl) {
+      return 'virtual';
+    }
+    return 'physical';
+  };
+
+  const normalizePriority = (meeting: any): 'low' | 'medium' | 'high' | 'urgent' => {
+    const rawPriority = meeting?.priority;
+    if (rawPriority === 'low' || rawPriority === 'medium' || rawPriority === 'high' || rawPriority === 'urgent') {
+      return rawPriority;
+    }
+    return 'medium';
+  };
+
+  const normalizeMeeting = (meeting: any): Meeting => {
+    const deptIds: string[] = [];
+    if (Array.isArray(meeting.departments) && meeting.departments.length > 0) {
+      meeting.departments.forEach((d: any) => {
+        const id = toId(d);
+        if (id) deptIds.push(id);
+      });
+    } else if (meeting.department) {
+      const id = toId(meeting.department);
+      if (id) deptIds.push(id);
+    } else if (meeting.departmentId) {
+      deptIds.push(String(meeting.departmentId));
+    }
+
+    const attendeesIds: string[] = [];
+    if (Array.isArray(meeting.participants) && meeting.participants.length > 0) {
+      meeting.participants.forEach((p: any) => {
+        const user = p.user || p;
+        const id = toId(user);
+        if (id) attendeesIds.push(id);
+      });
+    } else if (Array.isArray(meeting.inviteeUserIds)) {
+      meeting.inviteeUserIds.forEach((u: any) => {
+        const id = toId(u);
+        if (id) attendeesIds.push(id);
+      });
+    }
+
+    const organizerInfo = meeting.organizer && typeof meeting.organizer === 'object' ? meeting.organizer : toId(meeting.organizer);
+    const meetingLink = meeting.meetingLink || meeting.location?.virtual?.meetingUrl || '';
+    const startTime = meeting.startTime ? new Date(meeting.startTime) : (meeting.date ? new Date(meeting.date) : new Date());
+    const endTime = meeting.endTime ? new Date(meeting.endTime) : null;
+
+    return {
+      id: toId(meeting.id || meeting._id),
+      title: meeting.title || meeting.name || 'Untitled Meeting',
+      description: meeting.description || '',
+      type: meeting.type || normalizeMeetingType(meeting),
+      date: startTime,
+      duration: endTime ? Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60)) : (meeting.duration || 60),
+      location: meeting.location?.physical?.room ?? meeting.location?.virtual?.meetingUrl ?? (typeof meeting.location === 'string' ? meeting.location : ''),
+      meetingLink: meetingLink || undefined,
+      organizer: organizerInfo,
+      attendees: attendeesIds,
+      departments: deptIds,
+      status: meeting.status || 'scheduled',
+      priority: normalizePriority(meeting),
+      createdAt: meeting.createdAt ? new Date(meeting.createdAt) : new Date(),
+      updatedAt: meeting.updatedAt ? new Date(meeting.updatedAt) : new Date()
+    } as Meeting;
+  };
 
   // State management for meetings (following ManagerMeetingsManagement pattern)
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -97,73 +197,7 @@ export default function HODMeetingsManagement() {
           const meetingsArray = response.data ?? (response as any).meetings;
           console.log('HOD Meetings: Meetings array received:', Array.isArray(meetingsArray), 'Length:', meetingsArray?.length || 0);
 
-          const transformed = meetingsArray.map((meeting: any) => {
-            // Helper function to extract ID from various formats
-            const toId = (v: any) => {
-              if (!v && v !== 0) return '';
-              if (typeof v === 'string') return v;
-              if (typeof v === 'object') return String(v._id || v.id || v);
-              return String(v);
-            };
-
-            // Extract department IDs
-            const deptIds: string[] = [];
-            if (Array.isArray(meeting.departments) && meeting.departments.length > 0) {
-              meeting.departments.forEach((d: any) => {
-                const id = toId(d);
-                if (id) deptIds.push(id);
-              });
-            } else if (meeting.department) {
-              const id = toId(meeting.department);
-              if (id) deptIds.push(id);
-            } else if (meeting.departmentId) {
-              deptIds.push(String(meeting.departmentId));
-            }
-
-            // Extract attendee IDs
-            const attendeesIds: string[] = [];
-            if (Array.isArray(meeting.participants) && meeting.participants.length > 0) {
-              meeting.participants.forEach((p: any) => {
-                const user = p.user || p;
-                const id = toId(user);
-                if (id) attendeesIds.push(id);
-              });
-            } else if (Array.isArray(meeting.inviteeUserIds)) {
-              meeting.inviteeUserIds.forEach((u: any) => {
-                const id = toId(u);
-                if (id) attendeesIds.push(id);
-              });
-            }
-
-            // Transform meeting data
-            let organizerInfo: any = '';
-            if (meeting.organizer) {
-              if (typeof meeting.organizer === 'object' && meeting.organizer !== null) {
-                // If organizer is an object, preserve it for name extraction
-                organizerInfo = meeting.organizer;
-              } else {
-                // If it's a string, use it as ID
-                organizerInfo = toId(meeting.organizer);
-              }
-            }
-
-            return {
-              id: toId(meeting.id || meeting._id),
-              title: meeting.title || meeting.name || 'Untitled Meeting',
-              description: meeting.description || '',
-              type: meeting.type || 'department',
-              date: meeting.startTime ? new Date(meeting.startTime) : (meeting.date ? new Date(meeting.date) : new Date()),
-              duration: meeting.endTime ? Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : (meeting.duration || 60),
-              location: meeting.location?.physical?.room ?? meeting.location?.virtual?.meetingUrl ?? (typeof meeting.location === 'string' ? meeting.location : ''),
-              meetingLink: meeting.meetingLink,
-              organizer: organizerInfo,
-              attendees: attendeesIds,
-              departments: deptIds,
-              status: meeting.status || 'scheduled',
-              createdAt: meeting.createdAt ? new Date(meeting.createdAt) : new Date(),
-              updatedAt: meeting.updatedAt ? new Date(meeting.updatedAt) : new Date()
-            } as Meeting;
-          });
+          const transformed = meetingsArray.map(normalizeMeeting);
 
           console.log('HOD Meetings: Successfully transformed', transformed.length, 'meetings');
           console.log('HOD Meetings: Sample transformed meeting:', transformed[0] || 'No meetings');
@@ -203,58 +237,7 @@ export default function HODMeetingsManagement() {
 
       if (response && response.success && (response.data || (response as any).meetings)) {
         const meetingsArray = response.data ?? (response as any).meetings;
-        const transformed = meetingsArray.map((meeting: any) => {
-          const toId = (v: any) => {
-            if (!v && v !== 0) return '';
-            if (typeof v === 'string') return v;
-            if (typeof v === 'object') return String(v._id || v.id || v);
-            return String(v);
-          };
-
-          const deptIds: string[] = [];
-          if (Array.isArray(meeting.departments) && meeting.departments.length > 0) {
-            meeting.departments.forEach((d: any) => {
-              const id = toId(d);
-              if (id) deptIds.push(id);
-            });
-          } else if (meeting.department) {
-            const id = toId(meeting.department);
-            if (id) deptIds.push(id);
-          } else if (meeting.departmentId) {
-            deptIds.push(String(meeting.departmentId));
-          }
-
-          const attendeesIds: string[] = [];
-          if (Array.isArray(meeting.participants) && meeting.participants.length > 0) {
-            meeting.participants.forEach((p: any) => {
-              const user = p.user || p;
-              const id = toId(user);
-              if (id) attendeesIds.push(id);
-            });
-          } else if (Array.isArray(meeting.inviteeUserIds)) {
-            meeting.inviteeUserIds.forEach((u: any) => {
-              const id = toId(u);
-              if (id) attendeesIds.push(id);
-            });
-          }
-
-          return {
-            id: toId(meeting.id || meeting._id),
-            title: meeting.title || meeting.name || 'Untitled Meeting',
-            description: meeting.description || '',
-            type: meeting.type || 'department',
-            date: meeting.startTime ? new Date(meeting.startTime) : (meeting.date ? new Date(meeting.date) : new Date()),
-            duration: meeting.endTime ? Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : (meeting.duration || 60),
-            location: meeting.location?.physical?.room ?? meeting.location?.virtual?.meetingUrl ?? (typeof meeting.location === 'string' ? meeting.location : ''),
-            meetingLink: meeting.meetingLink,
-            organizer: toId(meeting.organizer?._id || meeting.organizer?.id || meeting.organizer || ''),
-            attendees: attendeesIds,
-            departments: deptIds,
-            status: meeting.status || 'scheduled',
-            createdAt: meeting.createdAt ? new Date(meeting.createdAt) : new Date(),
-            updatedAt: meeting.updatedAt ? new Date(meeting.updatedAt) : new Date()
-          } as Meeting;
-        });
+        const transformed = meetingsArray.map(normalizeMeeting);
 
         setMeetings(transformed);
         console.log('HOD Meetings: Refetch completed, meetings updated');
@@ -288,7 +271,7 @@ export default function HODMeetingsManagement() {
         } else {
           console.warn('HOD Meetings: API call failed, using mock data');
           console.log('HOD Meetings: Current user department ID:', currentUser?.departmentId);
-          
+
           // Fallback to mock data
           const userDepartment = currentUser?.departmentId ?
             mockDepartments.find(d => String(d.id) === String(currentUser.departmentId)) : null;
@@ -311,7 +294,7 @@ export default function HODMeetingsManagement() {
           }
 
           console.log('HOD Meetings: Final mock data users:', mockData.map(u => ({ id: u.id, name: u.name, role: u.role, departmentId: u.departmentId })));
-          
+
           return mockData;
         }
       } catch (e) {
@@ -327,7 +310,7 @@ export default function HODMeetingsManagement() {
           mockDepartments.find(d => String(d.id) === String(currentUser.departmentId)) : null;
 
         console.log('HOD Meetings: Error fallback - Found user department:', userDepartment);
-        
+
         let mockData = [];
         if (userDepartment?.memberIds) {
           mockData = mockUsers.filter(u => userDepartment.memberIds.includes(u.id));
@@ -335,10 +318,10 @@ export default function HODMeetingsManagement() {
           // If no department found, try to get users by departmentId directly
           mockData = mockUsers.filter(u => String(u.departmentId) === String(currentUser?.departmentId));
         }
-        
+
         console.log('HOD Meetings: Error fallback - Mock data:', mockData.length, 'users');
         console.log('HOD Meetings: Error fallback - Mock users:', mockData.map(u => ({ id: u.id, name: u.name, role: u.role })));
-        
+
         return mockData;
       }
     },
@@ -407,7 +390,7 @@ export default function HODMeetingsManagement() {
 
   // Use API data or fallback to mock data
   const departmentMembers = departmentMembersData || [];
-  console.log("agamon",departmentMembers)
+  console.log("agamon", departmentMembers)
 
   console.log('HOD Meetings - DEBUG INFO:', {
     currentUser: {
@@ -438,7 +421,7 @@ export default function HODMeetingsManagement() {
   // Only apply frontend filtering for search and status
   const filteredMeetings = meetings.filter(meeting => {
     const matchesSearch = meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         meeting.description.toLowerCase().includes(searchQuery.toLowerCase());
+      meeting.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || meeting.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -489,7 +472,7 @@ export default function HODMeetingsManagement() {
     if (!meetingForm.title.trim()) e.title = 'Title is required';
     if (!meetingForm.date || !meetingForm.time) e.startTime = 'Start time is required';
     if (meetingForm.selectedAttendees.length === 0) e.invitees = 'Select at least one team member';
-    if ((meetingForm.status === 'in_progress' || meetingForm.status === 'completed') && !meetingForm.meetingLink) {
+    if ((meetingForm.meetingType === 'virtual' || meetingForm.meetingType === 'hybrid') && !meetingForm.meetingLink) {
       e.meetingLink = 'Meeting link is required for virtual/hybrid meetings';
     }
     setErrors(e);
@@ -521,7 +504,7 @@ export default function HODMeetingsManagement() {
       };
 
       // Prepare meeting data for backend API (similar to admin panel)
-    const meetingDateTime = new Date(`${meetingForm.date}T${meetingForm.time}`);
+      const meetingDateTime = new Date(`${meetingForm.date}T${meetingForm.time}`);
       const endDateTime = meetingForm.endTime ?
         new Date(meetingForm.endTime) :
         new Date(meetingDateTime.getTime() + (meetingForm.duration * 60000));
@@ -532,13 +515,13 @@ export default function HODMeetingsManagement() {
 
       // Prepare payload for backend API (matching admin panel format)
       const payload = {
-      title: meetingForm.title,
+        title: meetingForm.title,
         description: meetingForm.description || '',
         startTime: meetingDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
         meetingLink: meetingForm.meetingLink || undefined,
-        type: 'physical' as const, // HOD meetings are department meetings
-        priority: 'medium' as const, // Default priority
+        type: meetingForm.meetingType,
+        priority: meetingForm.priority,
         departmentId: departmentToUse.id,
         inviteeUserIds: meetingForm.selectedAttendees.length > 0 ? meetingForm.selectedAttendees : undefined
       };
@@ -551,8 +534,8 @@ export default function HODMeetingsManagement() {
         res = await meetingService.updateMeeting(selectedMeeting.id, payload);
       } else {
         // Create new meeting
-      console.log('HOD Meeting Creation - Payload:', payload);
-      console.log('HOD Meeting Creation - Selected attendees:', meetingForm.selectedAttendees);
+        console.log('HOD Meeting Creation - Payload:', payload);
+        console.log('HOD Meeting Creation - Selected attendees:', meetingForm.selectedAttendees);
         res = await meetingService.createMeeting(payload);
       }
 
@@ -566,9 +549,9 @@ export default function HODMeetingsManagement() {
         toast.success(selectedMeeting ? 'Meeting has been updated successfully' : 'Meeting has been scheduled successfully');
 
         // Reset form and close dialog
-    resetForm();
-    setSelectedMeeting(null);
-    setShowScheduleDialog(false);
+        resetForm();
+        setSelectedMeeting(null);
+        setShowScheduleDialog(false);
 
       } else {
         console.error(selectedMeeting ? 'HOD Meeting Update - API response:' : 'HOD Meeting Creation - API response:', res);
@@ -585,11 +568,13 @@ export default function HODMeetingsManagement() {
 
   const handleEditMeeting = (meeting: Meeting) => {
     setSelectedMeeting(meeting);
-    
+
     // Calculate end time from start time and duration
     const startTime = new Date(meeting.date);
     const endTime = new Date(startTime.getTime() + (meeting.duration * 60000));
-    
+    const startLocalValue = toLocalInputValue(startTime);
+    const [localDate, localTime] = startLocalValue.split('T');
+
     // Process attendees to ensure they are in the correct format
     let processedAttendees: string[] = [];
     if (Array.isArray(meeting.attendees)) {
@@ -603,17 +588,20 @@ export default function HODMeetingsManagement() {
         return String(attendee);
       }).filter((attendee: string) => attendee && attendee.trim() !== '');
     }
-    
+
     console.log('HOD Meeting Edit - Processing attendees:', {
       originalAttendees: meeting.attendees,
       processedAttendees: processedAttendees,
       meetingId: meeting.id,
       meetingTitle: meeting.title
     });
-    
-    // Format endTime for datetime-local input (YYYY-MM-DDTHH:MM)
-    const endTimeFormatted = endTime.toISOString().slice(0, 16);
-    
+
+    const meetingType = normalizeMeetingType(meeting);
+    const meetingPriority = normalizePriority(meeting);
+
+    // Format endTime for datetime-local input (YYYY-MM-DDTHH:MM) in local time
+    const endTimeFormatted = toLocalInputValue(endTime);
+
     console.log('HOD Meeting Edit - Time calculations:', {
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
@@ -622,15 +610,17 @@ export default function HODMeetingsManagement() {
       date: meeting.date.toISOString().split('T')[0],
       time: meeting.date.toTimeString().slice(0, 5)
     });
-    
+
     setMeetingForm({
       title: meeting.title,
       description: meeting.description,
-      date: meeting.date.toISOString().split('T')[0],
-      time: meeting.date.toTimeString().slice(0, 5),
+      date: localDate,
+      time: localTime,
       endTime: endTimeFormatted, // Properly formatted for datetime-local input
       duration: meeting.duration,
       meetingLink: meeting.meetingLink || '',
+      meetingType: meetingType,
+      priority: meetingPriority,
       selectedAttendees: processedAttendees,
       status: meeting.status
     });
@@ -707,6 +697,8 @@ export default function HODMeetingsManagement() {
       endTime: '',
       duration: 60,
       meetingLink: '',
+      meetingType: 'physical',
+      priority: 'medium',
       selectedAttendees: [],
       status: 'scheduled'
     });
@@ -760,13 +752,13 @@ export default function HODMeetingsManagement() {
   };
 
   // Helper functions for organizer and invitation checks
-  const getOrganizerInfo = (organizerId: string) => {
+  const getOrganizerInfo = (organizer: string | any) => {
     let name = '';
     let role = '';
 
-    // If organizerId is not a string, try to extract name and role from object
-    if (typeof organizerId === 'object' && organizerId !== null) {
-      const orgObj = organizerId as any;
+    // If organizer is an object, try to extract name and role from object
+    if (typeof organizer === 'object' && organizer !== null) {
+      const orgObj = organizer as any;
       if (orgObj.firstName && orgObj.lastName) {
         name = `${orgObj.firstName} ${orgObj.lastName}`;
       } else if (orgObj.name) {
@@ -782,17 +774,27 @@ export default function HODMeetingsManagement() {
       }
     }
 
+    const organizerId = typeof organizer === 'string' ? organizer : toId(organizer);
+
     // If it's still a string, try to find in department members
-    if (typeof organizerId === 'string' && !name) {
-      const organizer = departmentMembers.find(member => member.id === organizerId);
-      if (organizer) {
-        name = organizer.name;
-        role = 'Team Member'; // Default role for department members
+    if (organizerId && !name) {
+      const organizerMember = departmentMembers.find(member => {
+        const memberId = member.id || (member as any)._id;
+        return String(memberId) === String(organizerId);
+      });
+      if (organizerMember) {
+        name = organizerMember.name || `${organizerMember.firstName || ''} ${organizerMember.lastName || ''}`.trim() || organizerMember.email || '';
+        if (organizerMember.role) {
+          role = organizerMember.role.replace('_', ' ').toLowerCase();
+          role = role.charAt(0).toUpperCase() + role.slice(1);
+        } else {
+          role = 'Team Member';
+        }
       }
 
       // If not found in department members, check mock users
       if (!name) {
-        const mockUser = mockUsers.find(user => user.id === organizerId);
+        const mockUser = mockUsers.find(user => user.id === organizerId || (user as any)._id === organizerId);
         if (mockUser) {
           name = mockUser.name;
           role = mockUser.role?.replace('_', ' ').toLowerCase() || 'User';
@@ -802,7 +804,7 @@ export default function HODMeetingsManagement() {
     }
 
     // Fallback to showing the ID
-    if (!name && typeof organizerId === 'string' && organizerId.length > 0) {
+    if (!name && organizerId) {
       name = organizerId;
       role = 'Unknown';
     }
@@ -816,8 +818,63 @@ export default function HODMeetingsManagement() {
     return { name, role };
   };
 
-  const getOrganizerName = (organizerId: string) => {
+  const getOrganizerName = (organizerId: string | any) => {
     return getOrganizerInfo(organizerId).name;
+  };
+
+  const getDisplayName = (user: any) => {
+    if (!user) return '';
+    if (user.name) return user.name;
+    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    if (fullName) return fullName;
+    if (user.email) return user.email.split('@')[0];
+    return '';
+  };
+
+  const resolveAttendeeName = (attendee: any) => {
+    if (!attendee && attendee !== 0) return '';
+
+    if (typeof attendee === 'object') {
+      const objectName = getDisplayName(attendee);
+      if (objectName) return objectName;
+      const idFromObject = toId(attendee);
+      if (!idFromObject) return '';
+      return resolveAttendeeName(idFromObject);
+    }
+
+    const attendeeId = String(attendee);
+    const member = departmentMembers.find(m => {
+      const memberId = String(m.id || (m as any)._id || '');
+      const memberEmail = String(m.email || '');
+      return memberId === attendeeId || memberEmail === attendeeId;
+    });
+    if (member) return getDisplayName(member);
+
+    const mockUser = mockUsers.find(u => {
+      const mockId = String(u.id || (u as any)._id || '');
+      const mockEmail = String(u.email || '');
+      return mockId === attendeeId || mockEmail === attendeeId;
+    });
+    if (mockUser) return getDisplayName(mockUser);
+
+    return 'Unknown';
+  };
+
+  const getAttendeeSummary = (attendees: any[], maxNames = 3) => {
+    if (!Array.isArray(attendees) || attendees.length === 0) {
+      return { summary: '', total: 0 };
+    }
+
+    const resolvedNames = attendees
+      .map(resolveAttendeeName)
+      .filter((name) => name && name.trim() !== '');
+
+    const uniqueNames = Array.from(new Set(resolvedNames));
+    const displayed = uniqueNames.slice(0, maxNames);
+    const remaining = Math.max(uniqueNames.length - displayed.length, 0);
+    const summary = displayed.join(', ') + (remaining > 0 ? ` +${remaining} more` : '');
+
+    return { summary, total: uniqueNames.length };
   };
 
   const isCurrentUserInvited = (meeting: Meeting) => {
@@ -825,10 +882,8 @@ export default function HODMeetingsManagement() {
   };
 
   const isCurrentUserOrganizer = (meeting: Meeting) => {
-    const organizerId = typeof meeting.organizer === 'object' ?
-      meeting.organizer.id || meeting.organizer._id :
-      meeting.organizer;
-    return organizerId === currentUser?.id;
+    const organizerId = toId(meeting.organizer);
+    return organizerId && organizerId === String(currentUser?.id || '');
   };
 
   // Show loading state while data is being fetched (following HODDepartmentManagement pattern)
@@ -845,83 +900,87 @@ export default function HODMeetingsManagement() {
 
   return (
     <div className="space-y-6">
-        {/* Loading Overlay for Operations */}
-        {(updatingMeetingId || deletingMeetingId) && (
-          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div className="flex items-center gap-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                {updatingMeetingId ? 'Updating meeting status...' : 'Deleting meeting...'}
-              </p>
-            </div>
+      {/* Loading Overlay for Operations */}
+      {(updatingMeetingId || deletingMeetingId) && (
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              {updatingMeetingId ? 'Updating meeting status...' : 'Deleting meeting...'}
+            </p>
           </div>
-        )}
+        </div>
+      )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Department Meetings</h1>
-          <p className="text-muted-foreground">
-            Manage meetings for {departmentToUse.name} department team
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button onClick={() => setShowScheduleDialog(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Schedule Meeting
-          </Button>
-          <div 
-            className="w-12 h-12 rounded-lg flex items-center justify-center shadow-sm"
-            style={{ backgroundColor: (departmentToUse as any).color || '#3B82F6' }}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border">
+        <div className="flex items-center gap-4">
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center shadow-md bg-gradient-to-br from-blue-500 to-blue-600 text-white"
           >
-            <Video className="w-6 h-6 text-white" />
+            <Video className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Department Meetings</h1>
+            <p className="text-muted-foreground text-sm">
+              Manage schedules and coordinate with the {departmentToUse.name} team
+            </p>
           </div>
         </div>
+        <Button onClick={() => setShowScheduleDialog(true)} size="lg" className="shadow-md hover:shadow-lg transition-all bg-blue-600 hover:bg-blue-700">
+          <Plus className="mr-2 h-5 w-5" />
+          Schedule Meeting
+        </Button>
       </div>
 
       {/* Enhanced Statistics */}
+      {/* Enhanced Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-blue-200 dark:border-blue-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Card className="relative overflow-hidden hover:shadow-md transition-shadow">
+          <div className="absolute inset-0 bg-blue-100 dark:bg-blue-900/20 opacity-50" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
             <CardTitle className="text-sm font-medium text-blue-900 dark:text-blue-100">Today's Meetings</CardTitle>
-            <Calendar className="h-4 w-4 text-blue-600" />
+            <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative">
             <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{todayMeetings.length}</div>
-            <p className="text-xs text-blue-700 dark:text-blue-300">Scheduled for today</p>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-green-200 dark:border-green-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-green-900 dark:text-green-100">This Week</CardTitle>
-            <Clock className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-900 dark:text-green-100">{thisWeekMeetings.length}</div>
-            <p className="text-xs text-green-700 dark:text-green-300">Next 7 days</p>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gradient-to-r from-purple-50 to-violet-50 dark:from-purple-950/20 dark:to-violet-950/20 border-purple-200 dark:border-purple-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-purple-900 dark:text-purple-100">Completed</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{completedMeetings.length}</div>
-            <p className="text-xs text-purple-700 dark:text-purple-300">Total completed</p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">Scheduled for today</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 border-orange-200 dark:border-orange-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-orange-900 dark:text-orange-100">Total Meetings</CardTitle>
-            <BarChart3 className="h-4 w-4 text-orange-600" />
+        <Card className="relative overflow-hidden hover:shadow-md transition-shadow">
+          <div className="absolute inset-0 bg-emerald-100 dark:bg-emerald-900/20 opacity-50" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
+            <CardTitle className="text-sm font-medium text-emerald-900 dark:text-emerald-100">This Week</CardTitle>
+            <Clock className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative">
+            <div className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">{thisWeekMeetings.length}</div>
+            <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">Next 7 days</p>
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden hover:shadow-md transition-shadow">
+          <div className="absolute inset-0 bg-purple-100 dark:bg-purple-900/20 opacity-50" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
+            <CardTitle className="text-sm font-medium text-purple-900 dark:text-purple-100">Completed</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+          </CardHeader>
+          <CardContent className="relative">
+            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{completedMeetings.length}</div>
+            <p className="text-xs text-purple-700 dark:text-purple-300 mt-1">Total completed</p>
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden hover:shadow-md transition-shadow">
+          <div className="absolute inset-0 bg-orange-100 dark:bg-orange-900/20 opacity-50" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
+            <CardTitle className="text-sm font-medium text-orange-900 dark:text-orange-100">Total Meetings</CardTitle>
+            <BarChart3 className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+          </CardHeader>
+          <CardContent className="relative">
             <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">{departmentMeetings.length}</div>
-            <p className="text-xs text-orange-700 dark:text-orange-300">All department meetings</p>
+            <p className="text-xs text-orange-700 dark:text-orange-300 mt-1">All department meetings</p>
           </CardContent>
         </Card>
       </div>
@@ -945,192 +1004,256 @@ export default function HODMeetingsManagement() {
 
         <TabsContent value="list" className="space-y-4">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Video className="h-5 w-5" />
-                  All Department Meetings
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search meetings..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-8 w-64"
-                    />
-                  </div>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="scheduled">Scheduled</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+            <div className="p-6 border-b bg-gray-50/50 dark:bg-gray-900/50 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <Video className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg">All Department Meetings</h3>
+                  <p className="text-sm text-muted-foreground">View and manage all scheduled sessions</p>
                 </div>
               </div>
-            </CardHeader>
+
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search meetings..."
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    className="pl-9 bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+                  <SelectTrigger className="w-[140px] bg-white dark:bg-slate-950">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <CardContent>
               <div className="space-y-4">
-                {filteredMeetings.length > 0 ? filteredMeetings.map((meeting) => (
-                  <Card key={meeting.id} className={`border-2 transition-all duration-200 hover:shadow-md ${
-                    isToday(meeting.date) ? 'border-blue-200 bg-blue-50/50 dark:bg-blue-950/10' : ''
-                  }`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4 flex-1">
-                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                            isToday(meeting.date) 
-                              ? 'bg-blue-100 dark:bg-blue-900'
-                              : 'bg-gray-100 dark:bg-gray-800'
-                          }`}>
-                            <Video className={`h-6 w-6 ${
-                              isToday(meeting.date) ? 'text-blue-600' : 'text-gray-600'
-                            }`} />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className="font-semibold text-lg">{meeting.title}</h3>
-                              <Badge className={getStatusColor(meeting.status)}>
-                                {getStatusIcon(meeting.status)}
-                                <span className="ml-1">{meeting.status.replace('_', ' ')}</span>
-                              </Badge>
-                              {isToday(meeting.date) && (
-                                <Badge variant="destructive" className="text-xs">Today</Badge>
-                              )}
-                              {isCurrentUserOrganizer(meeting) && (
-                                <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300">
-                                  Organizer
-                                </Badge>
-                              )}
-                              {isCurrentUserInvited(meeting) && !isCurrentUserOrganizer(meeting) && (
-                                <Badge variant="outline" className="text-xs">
-                                  Invited
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                              {meeting.description}
-                            </p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4 text-muted-foreground" />
+                {filteredMeetings.length > 0 ? (
+                  <>
+                    {filteredMeetings
+                      .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+                      .map((meeting) => {
+                        const attendeeSummary = getAttendeeSummary(meeting.attendees);
+
+                        return (
+                        <Card key={meeting.id} className={`group overflow-hidden transition-all duration-300 hover:shadow-lg border-l-4 ${meeting.status === 'scheduled' ? 'border-l-blue-500' :
+                          meeting.status === 'in_progress' ? 'border-l-green-500' :
+                            meeting.status === 'completed' ? 'border-l-gray-500' :
+                              'border-l-red-500'
+                          } ${isToday(meeting.date) ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+                          <CardContent className="p-0">
+                            <div className="flex flex-col md:flex-row">
+                              {/* Date & Time Section */}
+                              <div className="p-4 md:w-48 flex flex-row md:flex-col items-center justify-center gap-4 md:gap-2 border-b md:border-b-0 md:border-r bg-gray-50/50 dark:bg-gray-900/50">
+                                <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-800 rounded-lg shadow-sm border p-2 w-20 h-20">
+                                  <span className="text-xs font-bold text-red-500 uppercase tracking-wider">
+                                    {meeting.date.toLocaleString('default', { month: 'short' })}
+                                  </span>
+                                  <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                                    {meeting.date.getDate()}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground uppercase">
+                                    {meeting.date.toLocaleString('default', { weekday: 'short' })}
+                                  </span>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                    {meeting.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                                    <Timer className="h-3 w-3" />
+                                    {formatDuration(meeting.duration)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Main Content */}
+                              <div className="flex-1 p-4 md:p-6 flex flex-col justify-between">
                                 <div>
-                                  <p className="font-medium">Date & Time:</p>
-                                  <p className="text-muted-foreground">
-                                    {meeting.date.toLocaleDateString()} at {meeting.date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                  <div className="flex items-start justify-between mb-2">
+                                    <div>
+                                      <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 group-hover:text-primary transition-colors">
+                                        {meeting.title}
+                                      </h3>
+                                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                        <Badge variant="outline" className={`${getStatusColor(meeting.status)} border-none`}>
+                                          {getStatusIcon(meeting.status)}
+                                          <span className="ml-1 capitalize">{meeting.status.replace('_', ' ')}</span>
+                                        </Badge>
+                                        {isToday(meeting.date) && (
+                                          <Badge className="bg-blue-600 hover:bg-blue-700 text-white border-none animate-pulse">
+                                            Today
+                                          </Badge>
+                                        )}
+                                        {isCurrentUserOrganizer(meeting) && (
+                                          <Badge variant="secondary" className="text-xs">
+                                            Organizer
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      {isCurrentUserOrganizer(meeting) && (
+                                        <>
+                                          <Select
+                                            value={meeting.status}
+                                            onValueChange={(value) => handleUpdateMeetingStatus(meeting.id, value as MeetingStatus)}
+                                            disabled={updatingMeetingId === meeting.id}
+                                          >
+                                            <SelectTrigger className="w-28 h-8 text-xs">
+                                              {updatingMeetingId === meeting.id ? (
+                                                <div className="flex items-center gap-2">
+                                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
+                                                  <span>Updating...</span>
+                                                </div>
+                                              ) : (
+                                                <SelectValue />
+                                              )}
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="scheduled">Scheduled</SelectItem>
+                                              <SelectItem value="in_progress">In Progress</SelectItem>
+                                              <SelectItem value="completed">Completed</SelectItem>
+                                              <SelectItem value="cancelled">Cancelled</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                                            onClick={() => handleEditMeeting(meeting)}
+                                          >
+                                            <Edit className="h-4 w-4" />
+                                          </Button>
+
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-red-600"
+                                            onClick={() => handleDeleteMeeting(meeting.id)}
+                                            disabled={deletingMeetingId === meeting.id}
+                                          >
+                                            {deletingMeetingId === meeting.id ? (
+                                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-600"></div>
+                                            ) : (
+                                              <Trash2 className="h-4 w-4" />
+                                            )}
+                                          </Button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                                    {meeting.description || "No description provided."}
                                   </p>
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                <Timer className="h-4 w-4 text-muted-foreground" />
-                                <div>
-                                  <p className="font-medium">Duration:</p>
-                                  <p className="text-muted-foreground">{formatDuration(meeting.duration)}</p>
-                                </div>
-                              </div>
 
-                              <div className="flex items-center gap-2">
-                                <User className="h-4 w-4 text-muted-foreground" />
-                                <div>
-                                  <p className="font-medium">Organizer:</p>
-                                  <p className="text-muted-foreground">
-                                    {(() => {
-                                      const organizerInfo = getOrganizerInfo(meeting.organizer);
-                                      return `${organizerInfo.name} (${organizerInfo.role})`;
-                                    })()}
-                                  </p>
+                                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                    <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full">
+                                      <User className="h-3.5 w-3.5" />
+                                      <span className="text-xs">
+                                        By: <span className="font-medium text-gray-900 dark:text-gray-100">{getOrganizerInfo(meeting.organizer).name}</span>
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full">
+                                      <Users className="h-3.5 w-3.5" />
+                                      <div className="text-xs">
+                                        <div>{attendeeSummary.total} Attendees</div>
+                                        {attendeeSummary.total > 0 && (
+                                          <div className="text-[11px] text-muted-foreground line-clamp-1">
+                                            {attendeeSummary.summary}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
 
-                              <div className="flex items-center gap-2">
-                                <Users className="h-4 w-4 text-muted-foreground" />
-                                <div>
-                                  <p className="font-medium">Attendees:</p>
-                                  <p className="text-muted-foreground">{meeting.attendees.length} team members</p>
-                                </div>
+                                {/* Join Button Area */}
+                                {meeting.meetingLink && (isCurrentUserOrganizer(meeting) || isCurrentUserInvited(meeting)) && (
+                                  <div className="mt-4 pt-4 border-t flex justify-end">
+                                    <Button
+                                      className={`gap-2 ${isToday(meeting.date) ? 'w-full md:w-auto shadow-md shadow-blue-500/20' : ''}`}
+                                      variant={isToday(meeting.date) ? "default" : "outline"}
+                                      asChild
+                                    >
+                                      <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
+                                        <Video className="h-4 w-4" />
+                                        Join Meeting
+                                        <ExternalLink className="h-3 w-3 ml-1 opacity-70" />
+                                      </a>
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
                             </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
 
-
-                            {meeting.meetingLink && (isCurrentUserOrganizer(meeting) || isCurrentUserInvited(meeting)) && (
-                              <div className="flex items-center gap-2 mt-2">
-                                <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                                <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer" 
-                                   className="text-sm text-blue-600 hover:underline">
-                                  Join Meeting
-                                </a>
-                              </div>
-                            )}
-                          </div>
+                    {/* Pagination Controls */}
+                    {filteredMeetings.length > ITEMS_PER_PAGE && (
+                      <div className="flex items-center justify-between pt-4 border-t mt-6">
+                        <div className="text-sm text-muted-foreground">
+                          Showing <span className="font-medium">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filteredMeetings.length)}</span> to <span className="font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, filteredMeetings.length)}</span> of <span className="font-medium">{filteredMeetings.length}</span> meetings
                         </div>
-
-                        <div className="flex items-center gap-2 ml-4">
-                          {isCurrentUserOrganizer(meeting) && (
-                            <>
-                          <Select
-                            value={meeting.status}
-                            onValueChange={(value) => handleUpdateMeetingStatus(meeting.id, value as MeetingStatus)}
-                            disabled={updatingMeetingId === meeting.id}
-                          >
-                            <SelectTrigger className="w-28 h-8">
-                              {updatingMeetingId === meeting.id ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
-                                  <span>Updating...</span>
-                                </div>
-                              ) : (
-                              <SelectValue />
-                              )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="scheduled">Scheduled</SelectItem>
-                              <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="completed">Completed</SelectItem>
-                              <SelectItem value="cancelled">Cancelled</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          
+                        <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleEditMeeting(meeting)}
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
                           >
-                            <Edit className="h-4 w-4" />
+                            Previous
                           </Button>
-                          
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.ceil(filteredMeetings.length / ITEMS_PER_PAGE) }, (_, i) => i + 1).map((page) => (
+                              <Button
+                                key={page}
+                                variant={currentPage === page ? "default" : "ghost"}
+                                size="sm"
+                                className="w-8 h-8 p-0"
+                                onClick={() => setCurrentPage(page)}
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                          </div>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleDeleteMeeting(meeting.id)}
-                            disabled={deletingMeetingId === meeting.id}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(filteredMeetings.length / ITEMS_PER_PAGE)))}
+                            disabled={currentPage === Math.ceil(filteredMeetings.length / ITEMS_PER_PAGE)}
                           >
-                            {deletingMeetingId === meeting.id ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
-                            ) : (
-                            <Trash2 className="h-4 w-4" />
-                            )}
+                            Next
                           </Button>
-                            </>
-                          )}
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                )) : (
+                    )}
+                  </>
+                ) : (
                   <div className="text-center py-12">
                     <Video className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <h3 className="text-lg font-medium mb-2">No meetings found</h3>
                     <p className="text-muted-foreground mb-4">
-                      {searchQuery || statusFilter !== 'all' 
+                      {searchQuery || statusFilter !== 'all'
                         ? 'Try adjusting your search filters'
                         : 'No meetings scheduled for your department'}
                     </p>
@@ -1156,56 +1279,70 @@ export default function HODMeetingsManagement() {
             <CardContent>
               {todayMeetings.length > 0 ? (
                 <div className="space-y-4">
-                  {todayMeetings.map((meeting) => (
-                    <div key={meeting.id} className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border-2 border-blue-200 dark:border-blue-800">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
-                          <Video className="h-6 w-6 text-blue-600" />
-                        </div>
-                        <div>
-                          <h3 className="font-medium text-blue-900 dark:text-blue-100">{meeting.title}</h3>
-                          <p className="text-sm text-blue-700 dark:text-blue-300">
-                            {meeting.date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {formatDuration(meeting.duration)}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs">
-                              <Users className="w-3 h-3 mr-1" />
-                              {meeting.attendees.length} attendees
-                            </Badge>
-                            <Badge className={getStatusColor(meeting.status)}>
-                              {getStatusIcon(meeting.status)}
-                              <span className="ml-1">{meeting.status}</span>
-                            </Badge>
-                            {isCurrentUserOrganizer(meeting) && (
-                              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300">
-                                Organizer
+                  {todayMeetings.map((meeting) => {
+                    const attendeeSummary = getAttendeeSummary(meeting.attendees);
+
+                    return (
+                    <Card key={meeting.id} className="group overflow-hidden border-l-4 border-l-blue-500 bg-blue-50/30 dark:bg-blue-900/10 hover:shadow-md transition-all">
+                      <CardContent className="p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-800 rounded-lg shadow-sm border p-2 w-16 h-16 min-w-[4rem]">
+                            <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                              {meeting.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).split(' ')[0]}
+                            </span>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                              {meeting.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).split(' ')[1]}
+                            </span>
+                          </div>
+
+                          <div>
+                            <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 group-hover:text-primary transition-colors">
+                              {meeting.title}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="bg-white dark:bg-slate-800">
+                                <Timer className="w-3 h-3 mr-1" />
+                                {formatDuration(meeting.duration)}
                               </Badge>
-                            )}
-                            {isCurrentUserInvited(meeting) && !isCurrentUserOrganizer(meeting) && (
-                              <Badge variant="outline" className="text-xs">
-                                Invited
+                              <Badge variant="outline" className="bg-white dark:bg-slate-800">
+                                <Users className="w-3 h-3 mr-1" />
+                                {attendeeSummary.total} attendees
                               </Badge>
+                              <Badge className={getStatusColor(meeting.status)}>
+                                {getStatusIcon(meeting.status)}
+                                <span className="ml-1 capitalize">{meeting.status}</span>
+                              </Badge>
+                            </div>
+                            {attendeeSummary.total > 0 && (
+                              <p className="mt-2 text-xs text-muted-foreground line-clamp-1">
+                                Attendees: {attendeeSummary.summary}
+                              </p>
                             )}
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {meeting.meetingLink && (isCurrentUserOrganizer(meeting) || isCurrentUserInvited(meeting)) && (
-                          <Button variant="outline" size="sm" asChild>
-                            <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="w-4 h-4 mr-2" />
-                              Join Meeting
-                            </a>
-                          </Button>
-                        )}
-                        {isCurrentUserOrganizer(meeting) && (
-                        <Button variant="outline" size="sm" onClick={() => handleEditMeeting(meeting)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+
+                        <div className="flex items-center gap-2">
+                          {meeting.meetingLink && (
+                            <Button size="sm" className="gap-2 shadow-sm" asChild>
+                              <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
+                                <Video className="w-4 h-4" />
+                                Join
+                              </a>
+                            </Button>
+                          )}
+
+                          {isCurrentUserOrganizer(meeting) && (
+                            <div className="flex items-center gap-1 border-l pl-2 ml-2">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditMeeting(meeting)}>
+                                <Edit className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-12">
@@ -1260,7 +1397,7 @@ export default function HODMeetingsManagement() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Average Duration</span>
                     <Badge variant="outline">
-                      {departmentMeetings.length > 0 
+                      {departmentMeetings.length > 0
                         ? formatDuration(Math.round(departmentMeetings.reduce((acc, m) => acc + m.duration, 0) / departmentMeetings.length))
                         : '0m'
                       }
@@ -1292,7 +1429,7 @@ export default function HODMeetingsManagement() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Average Attendees</span>
                     <Badge variant="outline">
-                      {departmentMeetings.length > 0 
+                      {departmentMeetings.length > 0
                         ? Math.round(departmentMeetings.reduce((acc, m) => acc + m.attendees.length, 0) / departmentMeetings.length)
                         : 0
                       }
@@ -1323,8 +1460,8 @@ export default function HODMeetingsManagement() {
                 </>
               ) : (
                 <>
-              <Plus className="h-5 w-5 text-blue-600" />
-              Schedule New Meeting
+                  <Plus className="h-5 w-5 text-blue-600" />
+                  Schedule New Meeting
                 </>
               )}
             </DialogTitle>
@@ -1333,41 +1470,44 @@ export default function HODMeetingsManagement() {
           <form onSubmit={(e) => { e.preventDefault(); handleScheduleMeeting(); }} className="space-y-6">
             {/* Basic Meeting Information */}
             <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Title *</Label>
-                <Input
-                  value={meetingForm.title}
-                  onChange={(e) => setMeetingForm({ ...meetingForm, title: e.target.value })}
-                  placeholder="Enter meeting title"
-                />
+                  <Input
+                    value={meetingForm.title}
+                    onChange={(e) => setMeetingForm({ ...meetingForm, title: e.target.value })}
+                    placeholder="Enter meeting title"
+                  />
                   {(!meetingForm.title || meetingForm.title.trim() === '') && <p className="text-xs text-red-600">Title is required</p>}
-              </div>
+                </div>
 
                 <div className="space-y-2">
                   <Label>Priority</Label>
-                  <Select value={meetingForm.status} onValueChange={(value) => setMeetingForm({ ...meetingForm, status: value as any })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                      <SelectItem value="scheduled">Low</SelectItem>
-                      <SelectItem value="in_progress">Medium</SelectItem>
-                      <SelectItem value="completed">High</SelectItem>
-                      <SelectItem value="cancelled">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <Select
+                    value={meetingForm.priority}
+                    onValueChange={(value) => setMeetingForm({ ...meetingForm, priority: value as any })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
 
               <div className="space-y-2">
                 <Label>Description</Label>
-              <Textarea
-                value={meetingForm.description}
-                onChange={(e) => setMeetingForm({ ...meetingForm, description: e.target.value })}
+                <Textarea
+                  value={meetingForm.description}
+                  onChange={(e) => setMeetingForm({ ...meetingForm, description: e.target.value })}
                   placeholder="Meeting description (optional)"
-                rows={3}
-              />
+                  rows={3}
+                />
               </div>
             </div>
 
@@ -1376,21 +1516,24 @@ export default function HODMeetingsManagement() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Meeting Type</Label>
-                  <Select value={meetingForm.status} onValueChange={(value) => setMeetingForm({ ...meetingForm, status: value as any })}>
+                  <Select
+                    value={meetingForm.meetingType}
+                    onValueChange={(value) => setMeetingForm({ ...meetingForm, meetingType: value as any })}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="scheduled">Physical</SelectItem>
-                      <SelectItem value="in_progress">Virtual</SelectItem>
-                      <SelectItem value="completed">Hybrid</SelectItem>
+                      <SelectItem value="physical">Physical</SelectItem>
+                      <SelectItem value="virtual">Virtual</SelectItem>
+                      <SelectItem value="hybrid">Hybrid</SelectItem>
                     </SelectContent>
                   </Select>
-              </div>
+                </div>
 
                 <div className="space-y-2">
                   <Label>Start Time *</Label>
-                <Input
+                  <Input
                     type="datetime-local"
                     value={(() => {
                       // Only show combined datetime if both date and time are available
@@ -1412,8 +1555,8 @@ export default function HODMeetingsManagement() {
                         try {
                           const dateTime = new Date(e.target.value);
                           if (!isNaN(dateTime.getTime())) {
-                            const date = dateTime.toISOString().split('T')[0];
-                            const time = dateTime.toTimeString().slice(0, 5);
+                            const localValue = toLocalInputValue(dateTime);
+                            const [date, time] = localValue.split('T');
                             setMeetingForm({
                               ...meetingForm,
                               date,
@@ -1428,11 +1571,11 @@ export default function HODMeetingsManagement() {
                     }}
                   />
                   {(!meetingForm.date || !meetingForm.time) && <p className="text-xs text-red-600">Start time is required</p>}
-            </div>
+                </div>
 
                 <div className="space-y-2">
                   <Label>End Time</Label>
-                <Input
+                  <Input
                     type="datetime-local"
                     value={meetingForm.endTime || (() => {
                       // Calculate end time from start time and duration if not manually set
@@ -1442,7 +1585,7 @@ export default function HODMeetingsManagement() {
                           if (!isNaN(startDateTime.getTime())) {
                             const endDateTime = new Date(startDateTime.getTime() + (meetingForm.duration * 60000));
                             if (!isNaN(endDateTime.getTime())) {
-                              return endDateTime.toISOString().slice(0, 16);
+                              return toLocalInputValue(endDateTime);
                             }
                           }
                         } catch (error) {
@@ -1453,7 +1596,7 @@ export default function HODMeetingsManagement() {
                     })()}
                     onChange={(e) => {
                       const newEndTime = e.target.value;
-                      
+
                       setMeetingForm({
                         ...meetingForm,
                         endTime: newEndTime
@@ -1488,16 +1631,16 @@ export default function HODMeetingsManagement() {
               </div>
 
 
-              {(meetingForm.status === 'in_progress' || meetingForm.status === 'completed') && (
+              {(meetingForm.meetingType === 'virtual' || meetingForm.meetingType === 'hybrid') && (
                 <div className="space-y-2">
-                  <Label>Meeting Link {meetingForm.status === 'in_progress' ? '*' : ''}</Label>
-                <Input
+                  <Label>Meeting Link {meetingForm.meetingType === 'virtual' ? '*' : ''}</Label>
+                  <Input
                     placeholder="https://zoom.us/j/..."
-                  value={meetingForm.meetingLink}
-                  onChange={(e) => setMeetingForm({ ...meetingForm, meetingLink: e.target.value })}
-                />
+                    value={meetingForm.meetingLink}
+                    onChange={(e) => setMeetingForm({ ...meetingForm, meetingLink: e.target.value })}
+                  />
                   {errors.meetingLink && <p className="text-xs text-red-600">{errors.meetingLink}</p>}
-              </div>
+                </div>
               )}
             </div>
 
@@ -1525,27 +1668,27 @@ export default function HODMeetingsManagement() {
                   </div>
                   {!isLoadingMembers && departmentMembers.length > 0 && (
                     <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        // Select all available members (excluding current user)
-                        const availableMembers = departmentMembers.filter(member => {
-                          if (!member) return false;
-                          const memberId = member.id || (member as any)._id;
-                          const currentUserId = currentUser?.id || (currentUser as any)?._id;
-                          return memberId !== currentUserId;
-                        });
-                        const allAvailableMemberIds = availableMembers.map(m => m.id || (m as any)._id || m.email || m.name);
-                        setMeetingForm({
-                          ...meetingForm,
-                          selectedAttendees: allAvailableMemberIds
-                        });
-                      }}
-                      className="text-xs h-6"
-                    >
-                      Select All
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          // Select all available members (excluding current user)
+                          const availableMembers = departmentMembers.filter(member => {
+                            if (!member) return false;
+                            const memberId = member.id || (member as any)._id;
+                            const currentUserId = currentUser?.id || (currentUser as any)?._id;
+                            return memberId !== currentUserId;
+                          });
+                          const allAvailableMemberIds = availableMembers.map(m => m.id || (m as any)._id || m.email || m.name);
+                          setMeetingForm({
+                            ...meetingForm,
+                            selectedAttendees: allAvailableMemberIds
+                          });
+                        }}
+                        className="text-xs h-6"
+                      >
+                        Select All
                       </Button>
                       {meetingForm.selectedAttendees.length > 0 && (
                         <Button
@@ -1561,7 +1704,7 @@ export default function HODMeetingsManagement() {
                           className="text-xs h-6 text-red-600 hover:text-red-700"
                         >
                           Clear All
-                    </Button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -1607,6 +1750,7 @@ export default function HODMeetingsManagement() {
 
                     // Group members by their managers
                     const managerTeams: { [managerId: string]: { manager: any; members: any[] } } = {};
+                    const assignedMemberIds = new Set<string>();
 
                     // First, add all managers (even those without members) except current user
                     departmentMembers.forEach(member => {
@@ -1639,9 +1783,16 @@ export default function HODMeetingsManagement() {
                           // Manager is already in managerTeams, just add the member
                           if (managerTeams[mgrId]) {
                             managerTeams[mgrId].members.push(member);
+                            assignedMemberIds.add(String(memberId));
                           }
                         }
                       }
+                    });
+
+                    const unassignedMembers = availableMembers.filter(member => {
+                      const memberId = member.id || member._id || member.email || member.name;
+                      const isManager = member.role === 'manager' || member.role === 'department_head';
+                      return !isManager && !assignedMemberIds.has(String(memberId));
                     });
 
                     // Helper function to handle team member selection/deselection
@@ -1665,7 +1816,7 @@ export default function HODMeetingsManagement() {
                       if (!team) return;
 
                       const allTeamMemberIds = [managerId, ...team.members.map(m => m.id || m._id || m.email || m.name)];
-                      
+
                       if (isSelected) {
                         // Add all team members
                         const newAttendees = [...meetingForm.selectedAttendees];
@@ -1698,13 +1849,13 @@ export default function HODMeetingsManagement() {
                             <div key={managerId} className="space-y-2">
                               {/* Manager */}
                               <div className="flex items-center gap-3 py-2 px-2 rounded cursor-pointer hover:bg-gray-50 transition-colors">
-                    <Checkbox
+                                <Checkbox
                                   id={managerId}
                                   checked={meetingForm.selectedAttendees.includes(managerId)}
-                      onCheckedChange={(checked) => {
-                        handleManagerSelection(managerId, checked as boolean);
-                      }}
-                    />
+                                  onCheckedChange={(checked) => {
+                                    handleManagerSelection(managerId, checked as boolean);
+                                  }}
+                                />
                                 <div
                                   className="flex items-center gap-3 flex-1 cursor-pointer"
                                   onClick={() => {
@@ -1713,10 +1864,10 @@ export default function HODMeetingsManagement() {
                                   }}
                                 >
                                   <Avatar className="h-8 w-8">
-                        <AvatarFallback className="text-xs">
+                                    <AvatarFallback className="text-xs">
                                       {managerName.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
+                                    </AvatarFallback>
+                                  </Avatar>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
                                       <span className="text-sm font-medium truncate">{managerName}</span>
@@ -1724,11 +1875,11 @@ export default function HODMeetingsManagement() {
                                     </div>
                                     <div className="text-xs text-muted-foreground truncate">{manager.email}</div>
                                   </div>
-                      <Badge variant="outline" className="text-xs">
+                                  <Badge variant="outline" className="text-xs">
                                     Manager
-                      </Badge>
-                  </div>
-              </div>
+                                  </Badge>
+                                </div>
+                              </div>
 
                               {/* Team Members under this manager */}
                               <div className="ml-8 space-y-1">
@@ -1780,6 +1931,59 @@ export default function HODMeetingsManagement() {
                           );
                         })}
 
+                        {unassignedMembers.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Other Team Members
+                            </div>
+                            <div className="space-y-1">
+                              {unassignedMembers.map((member) => {
+                                const memberId = member.id || member._id || member.email || member.name;
+                                const memberName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim();
+                                const memberEmail = member.email;
+
+                                return (
+                                  <div
+                                    key={memberId}
+                                    className="flex items-center gap-3 py-2 px-2 rounded cursor-pointer hover:bg-gray-50 transition-colors"
+                                  >
+                                    <Checkbox
+                                      id={memberId}
+                                      checked={meetingForm.selectedAttendees.includes(memberId)}
+                                      onCheckedChange={(checked) => {
+                                        handleMemberSelection(memberId, checked as boolean);
+                                      }}
+                                    />
+                                    <div
+                                      className="flex items-center gap-3 flex-1 cursor-pointer"
+                                      onClick={() => {
+                                        const isSelected = meetingForm.selectedAttendees.includes(memberId);
+                                        handleMemberSelection(memberId, !isSelected);
+                                      }}
+                                    >
+                                      <Avatar className="h-6 w-6">
+                                        <AvatarFallback className="text-xs">
+                                          {memberName.split(' ').map(n => n[0]).join('')}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm truncate">{memberName}</span>
+                                          <User className="h-2 w-2 text-gray-500" />
+                                        </div>
+                                        <div className="text-xs text-muted-foreground truncate">{memberEmail}</div>
+                                      </div>
+                                      <Badge variant="outline" className="text-xs">
+                                        Member
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                       </>
                     ) : (
                       <div className="text-center py-8">
@@ -1792,14 +1996,14 @@ export default function HODMeetingsManagement() {
               </div>
 
               <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                {meetingForm.selectedAttendees.length} of {departmentMembers.filter(member => {
-                  if (!member) return false;
-                  const memberId = member.id || (member as any)._id;
-                  const currentUserId = currentUser?.id || (currentUser as any)?._id;
-                  return memberId !== currentUserId;
-                }).length} members selected
-              </p>
+                <p className="text-xs text-muted-foreground">
+                  {meetingForm.selectedAttendees.length} of {departmentMembers.filter(member => {
+                    if (!member) return false;
+                    const memberId = member.id || (member as any)._id;
+                    const currentUserId = currentUser?.id || (currentUser as any)?._id;
+                    return memberId !== currentUserId;
+                  }).length} members selected
+                </p>
                 {selectedMeeting && (
                   <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
                     <Edit className="w-3 h-3 mr-1" />
@@ -1807,7 +2011,7 @@ export default function HODMeetingsManagement() {
                   </Badge>
                 )}
               </div>
-              
+
               {/* Debug info for attendees */}
               {process.env.NODE_ENV === 'development' && (
                 <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-900 rounded text-xs">
@@ -1823,7 +2027,7 @@ export default function HODMeetingsManagement() {
                 </div>
               )}
               {errors.invitees && <p className="text-xs text-red-600">{errors.invitees}</p>}
-              
+
               {/* Show selected attendees summary */}
               {meetingForm.selectedAttendees.length > 0 && (
                 <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/20 rounded border border-green-200 dark:border-green-800">
@@ -1832,11 +2036,11 @@ export default function HODMeetingsManagement() {
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {meetingForm.selectedAttendees.slice(0, 5).map((attendeeId) => {
-                      const member = departmentMembers.find(m => 
+                      const member = departmentMembers.find(m =>
                         (m.id || m._id || m.email || m.name) === attendeeId
                       );
-                      const memberName = member ? 
-                        (member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim()) : 
+                      const memberName = member ?
+                        (member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim()) :
                         'Unknown Member';
                       return (
                         <Badge key={attendeeId} variant="secondary" className="text-xs">
@@ -1874,7 +2078,7 @@ export default function HODMeetingsManagement() {
               >
                 Cancel
               </Button>
-              <Button 
+              <Button
                 type="submit"
                 disabled={isSubmitting}
                 className="min-w-[140px]"
@@ -1890,9 +2094,9 @@ export default function HODMeetingsManagement() {
                       <>
                         <Edit className="w-4 h-4 mr-2" />
                         Update Meeting
-                  </>
-                ) : (
-                  <>
+                      </>
+                    ) : (
+                      <>
                         <Plus className="w-4 h-4 mr-2" />
                         Create Meeting
                       </>

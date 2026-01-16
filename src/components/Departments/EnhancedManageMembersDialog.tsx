@@ -377,6 +377,7 @@ export default function EnhancedManageMembersDialog({
               </div>
             </TabsContent>
           </Tabs>
+
         </div>
 
         <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-6">

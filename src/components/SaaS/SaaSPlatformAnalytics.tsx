@@ -171,14 +171,24 @@ export default function SaaSPlatformAnalytics() {
   const summary = analyticsData?.summary || {};
   const charts = analyticsData?.charts || {};
 
-  const currentMRR = summary.totalRevenue || 0;
-  const mrrGrowth = summary.mrrGrowth || '0.0';
-  const totalUsers = summary.totalUsers || 0;
-  const userGrowth = summary.userGrowth || '0.0';
-  const activeCompanies = summary.activeCompanies || 0;
-  const platformUptime = summary.platformUptime || 99.8;
-  const engagementScore = summary.engagementScore || 0;
-  const avgRevenuePerUser = summary.avgRevenuePerUser || 0;
+  // Normalize incoming numbers (API returns some fields as strings)
+  const latestRevenuePoint = charts.revenueGrowth?.[charts.revenueGrowth.length - 1];
+  const currentMRR = Number(
+    latestRevenuePoint?.revenue ??
+    summary.currentMRR ??
+    summary.totalRevenue ??
+    0
+  );
+  const mrrGrowth = Number(summary.mrrGrowth ?? 0).toFixed(1);
+  const totalUsers = Number(summary.totalUsers ?? 0);
+  const userGrowth = Number(summary.userGrowth ?? 0).toFixed(1);
+  const activeCompanies = Number(summary.activeCompanies ?? 0);
+  const platformUptime = Number(summary.platformUptime ?? 99.8);
+  const engagementScore = Number(summary.engagementScore ?? 0);
+  const avgRevenuePerUser = Number(summary.avgRevenuePerUser ?? 0);
+  const latestActiveUsers = charts.userGrowth?.length
+    ? charts.userGrowth[charts.userGrowth.length - 1]?.activeUsers ?? 0
+    : 0;
 
   // Format currency in INR
   const formatCurrency = (amount: number) => {
@@ -419,7 +429,7 @@ export default function SaaSPlatformAnalytics() {
                     +{mrrGrowth}%
                   </Badge>
                 </div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
                   {formatCurrency(currentMRR)}
                 </div>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">Monthly Recurring Revenue</p>
@@ -441,12 +451,12 @@ export default function SaaSPlatformAnalytics() {
                     +{userGrowth}%
                   </Badge>
                 </div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
                   {totalUsers.toLocaleString()}
                 </div>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">Platform Users</p>
                 <p className="text-gray-500 dark:text-gray-500 text-xs mt-2">
-                  {charts.userGrowth?.[charts.userGrowth.length - 1]?.activeUsers || 0} active this month
+                  {latestActiveUsers} active this month
                 </p>
               </CardContent>
             </Card>

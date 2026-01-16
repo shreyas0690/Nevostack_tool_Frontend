@@ -1,25 +1,25 @@
 import { useState, useEffect } from 'react';
+import { cn } from '@/lib/utils';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Settings, User, Save, Camera, 
+  User, Save, Camera,
   Mail, Phone, CheckCircle2, Loader2, Shield, Lock,
-  Building2, Globe, Users, Clock, Languages, Home
+  Building2, Bell, Code, RefreshCw
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { authService } from '@/services/authService';
 import { useAuth } from '@/components/Auth/AuthProvider';
-import { workspaceService, type Workspace } from '@/services/workspaceService';
-import { companyService, type Company, type UpdateCompanyData } from '@/services/companyService';
-import { userService, type User as UserType, type UpdateUserData } from '@/services/userService';
+import { companyService, type UpdateCompanyData } from '@/services/companyService';
+import { userService, type UpdateUserData } from '@/services/userService';
 import { testCompanyAPI } from '@/utils/testCompanyAPI';
 import FeatureAccessStatus from '@/components/FeatureAccess/FeatureAccessStatus';
 import FeatureDebugPanel from '@/components/FeatureAccess/FeatureDebugPanel';
@@ -30,15 +30,15 @@ import ApiTest from '@/components/FeatureAccess/ApiTest';
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
-  const [activeProfileTab, setActiveProfileTab] = useState('personal');
-  
+  const [activeTab, setActiveTab] = useState('profile');
+
   // Get current user and update function from auth context
   const { currentUser, updateCurrentUser } = useAuth();
-  
+
   // Debug: Log current user data
   console.log('Current User:', currentUser);
   console.log('Current User mobileNumber:', currentUser?.mobileNumber);
-  
+
   // Test company API on load
   useEffect(() => {
     if (currentUser?.companyId) {
@@ -48,7 +48,7 @@ export default function SettingsPage() {
       });
     }
   }, [currentUser?.companyId]);
-  
+
   // Profile state
   const [profileForm, setProfileForm] = useState({
     firstName: '',
@@ -83,8 +83,39 @@ export default function SettingsPage() {
   });
   console.log(companyForm)
 
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    email: false,
+    push: false,
+    sms: false
+  });
+
+  const [securitySettings, setSecuritySettings] = useState({
+    twoFactorRequired: false,
+    passwordPolicy: {
+      minLength: 8,
+      requireUppercase: false,
+      requireLowercase: false,
+      requireNumbers: false,
+      requireSpecialChars: false
+    }
+  });
+
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+
+  const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
 
   // Fetch user profile data
+  const isValidUserProfile = (profile?: { id?: string; email?: string } | null) => {
+    if (!profile) return false;
+    if (profile.email === 'john.doe@example.com') return false;
+    if (profile.id?.startsWith('mock-')) return false;
+    return true;
+  };
+
   const { data: userProfile, isLoading: isProfileLoading } = useQuery({
     queryKey: ['userProfile', currentUser?.id],
     queryFn: async () => {
@@ -92,10 +123,14 @@ export default function SettingsPage() {
       try {
         const response = await userService.getUserById(currentUser.id);
         // Backend returns { success: true, user: { ... } } or ApiResponse with data
-        return (response as any).user || response.data;
+        const profile = (response as any).user || response.data || null;
+        if (isValidUserProfile(profile)) {
+          return profile;
+        }
+        return isValidUserProfile(currentUser) ? currentUser : null;
       } catch (error) {
         console.error('Error fetching user profile:', error);
-        return null; // Do not fallback to mock/currentUser
+        return isValidUserProfile(currentUser) ? currentUser : null;
       }
     },
     enabled: !!currentUser?.id,
@@ -110,7 +145,7 @@ export default function SettingsPage() {
         console.log('⚠️ No company ID found for user:', currentUser);
         return null;
       }
-      
+
       console.log('🔍 Fetching company data for ID:', currentUser.companyId);
       const response = await companyService.getCompanyById(currentUser.companyId);
       return response.data;
@@ -119,7 +154,8 @@ export default function SettingsPage() {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 1 // Only retry once
   });
-
+  const companyUnavailable = !isCompanyLoading && !companyData;
+  const retryCompanyFetch = () => queryClient.invalidateQueries({ queryKey: ['company'] });
 
   // Update avatar when currentUser changes
   useEffect(() => {
@@ -177,6 +213,23 @@ export default function SettingsPage() {
       };
       console.log('Setting Company Form:', companyFormData);
       setCompanyForm(companyFormData);
+
+      setNotificationPrefs({
+        email: companyData.settings?.notifications?.email ?? false,
+        push: companyData.settings?.notifications?.push ?? false,
+        sms: companyData.settings?.notifications?.sms ?? false
+      });
+
+      setSecuritySettings({
+        twoFactorRequired: companyData.settings?.security?.twoFactorRequired ?? false,
+        passwordPolicy: {
+          minLength: companyData.settings?.security?.passwordPolicy?.minLength ?? 8,
+          requireUppercase: companyData.settings?.security?.passwordPolicy?.requireUppercase ?? false,
+          requireLowercase: companyData.settings?.security?.passwordPolicy?.requireLowercase ?? false,
+          requireNumbers: companyData.settings?.security?.passwordPolicy?.requireNumbers ?? false,
+          requireSpecialChars: companyData.settings?.security?.passwordPolicy?.requireSpecialChars ?? false
+        }
+      });
     }
   }, [companyData, currentUser?.companyId]);
 
@@ -235,6 +288,51 @@ export default function SettingsPage() {
     }
   });
 
+  const updateSecurityMutation = useMutation({
+    mutationFn: async (securitySettings: { twoFactorRequired: boolean; passwordPolicy: { minLength: number; requireUppercase: boolean; requireLowercase: boolean; requireNumbers: boolean; requireSpecialChars: boolean } }) => {
+      if (!currentUser?.companyId) throw new Error('No company ID');
+      return await companyService.updateCompany(currentUser.companyId, {
+        settings: { security: securitySettings }
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Security Updated",
+        description: "Security settings have been saved.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['company'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update security settings. Please try again.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const updateNotificationMutation = useMutation({
+    mutationFn: async (notifications: { email: boolean; push: boolean; sms: boolean }) => {
+      if (!currentUser?.companyId) throw new Error('No company ID');
+      return await companyService.updateCompany(currentUser.companyId, {
+        settings: { notifications }
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Notifications Updated",
+        description: "Notification preferences have been saved.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['company'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update notifications. Please try again.",
+        variant: "destructive",
+      });
+    }
+  });
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,6 +367,64 @@ export default function SettingsPage() {
     updateCompanyMutation.mutate(updateData);
   };
 
+  const handleSecuritySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    updateSecurityMutation.mutate(securitySettings);
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      toast({
+        title: "Missing Fields",
+        description: "Please fill in all password fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({
+        title: "Password Mismatch",
+        description: "New password and confirmation do not match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsPasswordUpdating(true);
+      await authService.changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword
+      });
+
+      toast({
+        title: "Password Updated",
+        description: "Your password has been changed successfully.",
+      });
+
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch (error: any) {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update password. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPasswordUpdating(false);
+    }
+  };
+
+  const handleNotificationsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    updateNotificationMutation.mutate(notificationPrefs);
+  };
 
   // Handle avatar file selection and upload
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -294,7 +450,7 @@ export default function SettingsPage() {
             name: currentUser?.name || `${profileForm.firstName} ${profileForm.lastName}`.trim()
           });
 
-        // Update the query cache to reflect the new avatar
+          // Update the query cache to reflect the new avatar
           queryClient.setQueryData(['userProfile', currentUser.id], (oldData: any) => {
             if (oldData) {
               return { ...oldData, avatar: newAvatarUrl };
@@ -303,12 +459,12 @@ export default function SettingsPage() {
           });
 
           // Invalidate queries to refresh profile data
-        queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+          queryClient.invalidateQueries({ queryKey: ['userProfile'] });
 
-        toast({
-          title: "Avatar Updated",
-          description: "Your avatar has been successfully updated.",
-        });
+          toast({
+            title: "Avatar Updated",
+            description: "Your avatar has been successfully updated.",
+          });
         } else {
           throw new Error('Upload failed - no avatar URL returned');
         }
@@ -347,661 +503,664 @@ export default function SettingsPage() {
   };
 
 
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 max-w-7xl">
-        {/* Analytics-style Header */}
-        <div className="relative mb-4 sm:mb-6 lg:mb-8">
-          <div className="absolute inset-0 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10 dark:to-transparent rounded-xl"></div>
-          <div className="relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl border border-slate-200/50 dark:border-slate-700/50 p-3 sm:p-4 lg:p-6">
-          <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-r from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
-                  <Settings className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-white" />
+  const sidebarItems = [
+    { id: 'profile', label: 'Profile Settings', icon: User, description: 'Personal details & avatar' },
+    { id: 'account', label: 'Account Security', icon: Shield, description: 'Password & 2FA' },
+    { id: 'company', label: 'Company Settings', icon: Building2, description: 'Branding & preferences' },
+    { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Email & alerts' },
+    { id: 'developer', label: 'Developer', icon: Code, description: 'API & Debugging' },
+  ];
+
+  const ProfileSkeleton = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="md:col-span-1 border-slate-200 dark:border-slate-700 shadow-sm h-fit">
+          <CardContent className="pt-6 text-center">
+            <Skeleton className="mx-auto h-32 w-32 rounded-full" />
+            <Skeleton className="h-5 w-32 mx-auto mt-4" />
+            <Skeleton className="h-4 w-40 mx-auto mt-2" />
+            <Skeleton className="h-6 w-20 mx-auto mt-4" />
+          </CardContent>
+        </Card>
+        <Card className="md:col-span-2 border-slate-200 dark:border-slate-700 shadow-sm">
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
               </div>
-              <div>
-                  <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    <span className="hidden sm:inline">Settings</span>
-                    <span className="sm:hidden">Settings</span>
-                  </h1>
-                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                    <span className="hidden sm:inline">Manage your profile and company preferences</span>
-                    <span className="sm:hidden">Manage profile and preferences</span>
-                  </p>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="pt-4 flex justify-end">
+                <Skeleton className="h-10 w-32" />
               </div>
             </div>
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs sm:text-sm px-2 sm:px-3 py-1">
-                <CheckCircle2 className="h-3 w-3 mr-1" />
-                <span className="hidden sm:inline">All Systems Operational</span>
-                <span className="sm:hidden">Operational</span>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+
+  const AccountSkeleton = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+        <CardHeader>
+          <Skeleton className="h-5 w-44" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4 max-w-md">
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+            <div className="pt-2">
+              <Skeleton className="h-10 w-40" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+        <CardHeader>
+          <Skeleton className="h-5 w-56" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+              <div>
+                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-3 w-44 mt-2" />
+              </div>
+              <Skeleton className="h-6 w-10 rounded-full" />
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <div className="space-y-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-6 w-10 rounded-full" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-6 w-10 rounded-full" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-6 w-10 rounded-full" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-44" />
+                    <Skeleton className="h-6 w-10 rounded-full" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Skeleton className="h-10 w-48" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const CompanySkeleton = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+        <CardHeader>
+          <Skeleton className="h-5 w-44" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </div>
+            <Skeleton className="h-px w-full" />
+            <div className="space-y-4">
+              <Skeleton className="h-4 w-24" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Skeleton className="h-10 w-40" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const NotificationsSkeleton = () => (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+        <CardHeader>
+          <Skeleton className="h-5 w-52" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {[0, 1, 2].map((idx) => (
+              <div key={idx} className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                <div>
+                  <Skeleton className="h-4 w-44" />
+                  <Skeleton className="h-3 w-36 mt-2" />
+                </div>
+                <Skeleton className="h-6 w-10 rounded-full" />
+              </div>
+            ))}
+            <div className="pt-2 flex justify-end">
+              <Skeleton className="h-10 w-40" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const CompanyUnavailable = () => (
+    <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+      <CardHeader>
+        <CardTitle>No company data found</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          We couldn&apos;t load your workspace details right now. Please refresh or retry in a moment.
+        </p>
+        <Button variant="outline" onClick={retryCompanyFetch}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Retry fetch
+        </Button>
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-900/50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Settings</h1>
+              <p className="text-slate-500 dark:text-slate-400 mt-1">Manage your workspace preferences and configurations</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 py-1.5 px-3">
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mr-2" />
+                <span className="text-slate-600 dark:text-slate-300">System Operational</span>
               </Badge>
             </div>
-            </div>
           </div>
         </div>
 
-        {/* Settings Sections */}
-        <div className="space-y-4 sm:space-y-6 lg:space-y-8">
-
-          {/* Profile Section with Tabs */}
-          <div className="space-y-4 sm:space-y-6">
-            <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                <User className="h-4 w-4 sm:h-5 sm:w-5 text-red-600 dark:text-red-400" />
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100">
-                  <span className="hidden sm:inline">Profile Settings</span>
-                  <span className="sm:hidden">Profile</span>
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                  <span className="hidden sm:inline">Manage your personal information and preferences</span>
-                  <span className="sm:hidden">Manage personal information</span>
-                </p>
-          </div>
-        </div>
-
-            <Tabs value={activeProfileTab} onValueChange={setActiveProfileTab} className="space-y-4 sm:space-y-6">
-              <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <TabsTrigger 
-                  value="personal" 
-                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:text-red-600 dark:data-[state=active]:text-red-400 text-xs sm:text-sm px-2 sm:px-4 py-2"
-              >
-                  <span className="hidden sm:inline">Personal Information</span>
-                  <span className="sm:hidden">Personal</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                  value="account" 
-                  className="data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:text-red-600 dark:data-[state=active]:text-red-400 text-xs sm:text-sm px-2 sm:px-4 py-2"
-              >
-                  <span className="hidden sm:inline">Account Settings</span>
-                  <span className="sm:hidden">Account</span>
-              </TabsTrigger>
-            </TabsList>
-
-              <TabsContent value="personal" className="space-y-4 sm:space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-              {/* Profile Picture Card */}
-                  <Card className="lg:col-span-1 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
-                <CardHeader className="text-center pb-3 sm:pb-4 p-3 sm:p-4 lg:p-6">
-                  <div className="relative mx-auto">
-                        <div className="w-24 h-24 sm:w-28 sm:h-28 lg:w-32 lg:h-32 mx-auto relative">
-                          <Avatar className="w-full h-full border-4 border-white shadow-lg">
-                      <AvatarImage
-                        src={currentAvatar}
-                        alt={`${profileForm.firstName} ${profileForm.lastName}`}
-                      />
-                            <AvatarFallback className="text-lg sm:text-xl lg:text-2xl font-bold bg-gradient-to-r from-red-500 to-red-600 text-white">
-                        {(profileForm.firstName[0] || 'U')}{(profileForm.lastName[0] || '')}
-                      </AvatarFallback>
-                    </Avatar>
-                          <div className="absolute -bottom-1 -right-1">
-                      <label htmlFor="avatar-upload" className="cursor-pointer">
-                              <div className={`w-8 h-8 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-full flex items-center justify-center shadow-lg transition-colors ${
-                                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'
-                              }`}>
-                          {isLoading ? (
-                            <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 text-white animate-spin" />
-                          ) : (
-                            <Camera className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-                          )}
-                        </div>
-                      </label>
-                      <input
-                        id="avatar-upload"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleAvatarChange}
-                        disabled={isLoading}
-                        className="hidden"
-                      />
-                          </div>
-                    </div>
-                  </div>
-                  <div className="mt-3 sm:mt-4">
-                        <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
-                      {profileForm.firstName} {profileForm.lastName}
-                    </h3>
-                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">{profileForm.email}</p>
-                        <Badge className="mt-2 bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 text-xs sm:text-sm px-2 py-1">
-                      {currentUser?.role || 'User'}
-                    </Badge>
-                  </div>
-                </CardHeader>
-              </Card>
-
-                  {/* Personal Information Form */}
-                  <Card className="lg:col-span-2 border-slate-200 dark:border-slate-700 shadow-sm">
-                    <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
-                      <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                        <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                          <User className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                        </div>
-                        <span className="text-sm sm:text-base lg:text-lg">
-                          <span className="hidden sm:inline">Personal Information</span>
-                          <span className="sm:hidden">Personal Info</span>
-                        </span>
-                  </CardTitle>
-                </CardHeader>
-                    <CardContent className="p-3 sm:p-4 lg:p-6">
-                  {isProfileLoading ? (
-                    <div className="flex items-center justify-center py-8 sm:py-12">
-                          <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-red-600" />
-                          <span className="ml-2 sm:ml-3 text-sm sm:text-lg text-slate-900 dark:text-slate-100">Loading profile...</span>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleProfileSubmit} className="space-y-4 sm:space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                              <Label htmlFor="firstName" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            First Name
-                          </Label>
-                          <Input
-                            id="firstName"
-                            value={profileForm.firstName}
-                            onChange={(e) => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
-                                className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            required
-                          />
-                        </div>
-                        <div>
-                              <Label htmlFor="lastName" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Last Name
-                          </Label>
-                          <Input
-                            id="lastName"
-                            value={profileForm.lastName}
-                            onChange={(e) => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
-                                className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                            <Label htmlFor="email" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                          Email Address
-                        </Label>
-                        <div className="relative mt-1 sm:mt-2">
-                          <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
-                          <Input
-                            id="email"
-                            type="email"
-                            value={profileForm.email}
-                            onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
-                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                            <Label htmlFor="mobileNumber" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                          Mobile Number
-                        </Label>
-                        <div className="relative mt-1 sm:mt-2">
-                          <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
-                          <Input
-                            id="mobileNumber"
-                            value={profileForm.mobileNumber || ''}
-                            onChange={(e) => setProfileForm(prev => ({ ...prev, mobileNumber: e.target.value }))}
-                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            placeholder="+1 (555) 987-6543"
-                          />
-                        </div>
-                      </div>
-
-                      <Separator className="my-4 sm:my-6" />
-
-                      <div className="flex justify-end gap-2 sm:gap-3">
-                        <Button 
-                          type="submit" 
-                          disabled={updateProfileMutation.isPending}
-                              className="bg-red-600 hover:bg-red-700 text-white h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
-                        >
-                          {updateProfileMutation.isPending ? (
-                            <>
-                              <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">Saving...</span>
-                              <span className="sm:hidden">Saving...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">Save Profile</span>
-                              <span className="sm:hidden">Save</span>
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </form>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Sidebar Navigation */}
+          <div className="lg:col-span-3 space-y-2">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-2 shadow-sm">
+              {sidebarItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 p-3 rounded-lg transition-all text-left mb-1 last:mb-0",
+                    activeTab === item.id
+                      ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-400"
                   )}
-                </CardContent>
-              </Card>
+                >
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors",
+                    activeTab === item.id ? "bg-white dark:bg-slate-800 text-red-600 dark:text-red-400 shadow-sm" : "bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-500"
+                  )}>
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <span className="block text-sm">{item.label}</span>
+                    <span className="block text-[10px] opacity-70 font-normal mt-0.5">{item.description}</span>
+                  </div>
+                </button>
+              ))}
             </div>
-          </TabsContent>
+          </div>
 
-              <TabsContent value="account" className="space-y-4 sm:space-y-6">
-                {/* Account Security */}
-                <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
-                  <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
-                    <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                        <Shield className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                      </div>
-                      <span className="text-sm sm:text-base lg:text-lg">
-                        <span className="hidden sm:inline">Account Security</span>
-                        <span className="sm:hidden">Security</span>
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-3 sm:p-4 lg:p-6">
-                    <div className="space-y-4 sm:space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                          <Label htmlFor="currentPassword" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Current Password
-                          </Label>
-                          <Input
-                            id="currentPassword"
-                            type="password"
-                            className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            placeholder="Enter current password"
-                          />
-                  </div>
-                        <div>
-                          <Label htmlFor="newPassword" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            New Password
-                          </Label>
-                          <Input
-                            id="newPassword"
-                            type="password"
-                            className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            placeholder="Enter new password"
-                          />
-                    </div>
-                  </div>
-                      
-                      <div>
-                        <Label htmlFor="confirmPassword" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                          Confirm New Password
-                        </Label>
-                        <Input
-                          id="confirmPassword"
-                          type="password"
-                          className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                          placeholder="Confirm new password"
-                        />
-                      </div>
+          {/* Content Area */}
+          <div className="lg:col-span-9 space-y-6">
 
-                      <Separator className="my-4 sm:my-6" />
-
-                      <div className="flex justify-end gap-2 sm:gap-3">
-                        <Button 
-                          type="button" 
-                          variant="outline"
-                          className="border-slate-200 dark:border-slate-700 h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
-                        >
-                          <span className="hidden sm:inline">Cancel</span>
-                          <span className="sm:hidden">Cancel</span>
-                        </Button>
-                        <Button 
-                          type="button"
-                          className="bg-red-600 hover:bg-red-700 text-white h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
-                        >
-                          <Lock className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                          <span className="hidden sm:inline">Update Password</span>
-                          <span className="sm:hidden">Update</span>
-                        </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-                {/* Company Overview */}
-                <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
-                  <CardHeader className="text-center p-3 sm:p-4 lg:p-6">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 mx-auto bg-gradient-to-r from-red-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg">
-                      <Building2 className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12 text-white" />
-                    </div>
-                    <div className="mt-3 sm:mt-4">
-                      <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
-                        {companyForm.name || 'Your Company'}
-                      </h3>
-                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                        {companyForm.domain || 'company.com'}
-                      </p>
-                      <div className="flex flex-wrap gap-1 sm:gap-2 mt-3 sm:mt-4 justify-center">
-                        <Badge className={`${getPlanBadgeColor(companyForm.plan)} text-xs px-2 py-1 font-medium border shadow-sm`}>
-                          <div className="flex items-center gap-1">
-                            <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
-                              companyForm.plan?.toLowerCase() === 'starter' ? 'bg-slate-500' :
-                              companyForm.plan?.toLowerCase() === 'professional' ? 'bg-blue-500' :
-                              companyForm.plan?.toLowerCase() === 'enterprise' ? 'bg-purple-500' : 'bg-slate-500'
-                            }`}></div>
-                          <span className="hidden sm:inline">{companyForm.plan?.charAt(0).toUpperCase() + companyForm.plan?.slice(1)} Plan</span>
-                          <span className="sm:hidden">{companyForm.plan?.charAt(0).toUpperCase() + companyForm.plan?.slice(1)}</span>
-                          </div>
+            {/* Profile Settings */}
+            {activeTab === 'profile' && (
+              isProfileLoading ? (
+                <ProfileSkeleton />
+              ) : (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Avatar Card */}
+                    <Card className="md:col-span-1 border-slate-200 dark:border-slate-700 shadow-sm h-fit">
+                      <CardContent className="pt-6 text-center">
+                        <div className="relative mx-auto w-32 h-32 mb-4">
+                          <Avatar className="w-full h-full border-4 border-slate-50 dark:border-slate-800 shadow-xl">
+                            <AvatarImage src={currentAvatar} alt={profileForm.firstName} />
+                            <AvatarFallback className="text-3xl font-bold bg-gradient-to-br from-red-500 to-red-600 text-white">
+                              {(profileForm.firstName[0] || 'U')}{(profileForm.lastName[0] || '')}
+                            </AvatarFallback>
+                          </Avatar>
+                          <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 cursor-pointer group">
+                            <div className="w-10 h-10 bg-slate-900 dark:bg-slate-700 rounded-full flex items-center justify-center border-4 border-white dark:border-slate-800 shadow-lg group-hover:scale-110 transition-transform">
+                              {isLoading ? <Loader2 className="h-4 w-4 text-white animate-spin" /> : <Camera className="h-4 w-4 text-white" />}
+                            </div>
+                            <input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} disabled={isLoading} className="hidden" />
+                          </label>
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">{profileForm.firstName} {profileForm.lastName}</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{profileForm.email}</p>
+                        <Badge variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          {currentUser?.role || 'User'}
                         </Badge>
-                        <Badge className={`${getStatusBadgeColor(companyForm.status)} text-xs px-2 py-1 font-medium border shadow-sm`}>
-                          <div className="flex items-center gap-1">
-                            <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
-                              companyForm.status?.toLowerCase() === 'active' ? 'bg-green-500' :
-                              companyForm.status?.toLowerCase() === 'trial' ? 'bg-amber-500' :
-                              companyForm.status?.toLowerCase() === 'suspended' ? 'bg-red-500' : 'bg-slate-500'
-                            }`}></div>
-                          <span className="hidden sm:inline">{companyForm.status?.charAt(0).toUpperCase() + companyForm.status?.slice(1)}</span>
-                          <span className="sm:hidden">{companyForm.status?.charAt(0).toUpperCase() + companyForm.status?.slice(1)}</span>
-                          </div>
-                        </Badge>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-3 sm:p-4 lg:p-6">
-                    <div className="space-y-3 sm:space-y-4">
-                      <div className="flex items-center justify-between p-2 sm:p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                        <div className="flex items-center gap-1 sm:gap-2">
-                          <Users className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                          <span className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">Users</span>
-                        </div>
-                        <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                          {companyForm.currentUsers} / {companyForm.maxUsers}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                      </CardContent>
+                    </Card>
 
-                {/* Company Information */}
-                <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
-                  <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
-                    <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                      <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                        <Building2 className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                      </div>
-                      <span className="text-sm sm:text-base lg:text-lg">
-                        <span className="hidden sm:inline">Company Information</span>
-                        <span className="sm:hidden">Company Info</span>
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-3 sm:p-4 lg:p-6">
-                  {isCompanyLoading ? (
-                    <div className="flex items-center justify-center py-8 sm:py-12">
-                        <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-red-600" />
-                        <span className="ml-2 sm:ml-3 text-sm sm:text-lg text-slate-900 dark:text-slate-100">Loading company data...</span>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleCompanySubmit} className="space-y-4 sm:space-y-6">
-                      <div>
-                          <Label htmlFor="companyName" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                          Company Name
-                        </Label>
-                        <div className="relative mt-1 sm:mt-2">
-                          <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                    {/* Personal Details Form */}
+                    <Card className="md:col-span-2 border-slate-200 dark:border-slate-700 shadow-sm">
+                      <CardHeader>
+                        <CardTitle>Personal Information</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <form onSubmit={handleProfileSubmit} className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>First Name</Label>
+                              <Input value={profileForm.firstName} onChange={(e) => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Last Name</Label>
+                              <Input value={profileForm.lastName} onChange={(e) => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Email</Label>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                              <Input type="email" className="pl-10" value={profileForm.email} onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Phone</Label>
+                            <div className="relative">
+                              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                              <Input className="pl-10" value={profileForm.mobileNumber} onChange={(e) => setProfileForm(prev => ({ ...prev, mobileNumber: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div className="pt-4 flex justify-end">
+                            <Button type="submit" disabled={updateProfileMutation.isPending} className="bg-red-600 hover:bg-red-700">
+                              {updateProfileMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                              Save Changes
+                            </Button>
+                          </div>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Account Settings */}
+            {activeTab === 'account' && (
+              isCompanyLoading ? (
+                <AccountSkeleton />
+              ) : companyUnavailable ? (
+                <CompanyUnavailable />
+              ) : (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Lock className="h-5 w-5 text-red-600" />
+                        Change Password
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+                        <div className="space-y-2">
+                          <Label>Current Password</Label>
                           <Input
-                            id="companyName"
-                            value={companyForm.name}
-                            onChange={(e) => setCompanyForm(prev => ({ ...prev, name: e.target.value }))}
-                              className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                            required
+                            type="password"
+                            value={passwordForm.currentPassword}
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, currentPassword: e.target.value }))}
                           />
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                            <Label htmlFor="domain" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Domain
-                          </Label>
-                          <div className="relative mt-1 sm:mt-2">
-                            <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
-                            <Input
-                              id="domain"
-                              value={companyForm.domain}
-                              onChange={(e) => setCompanyForm(prev => ({ ...prev, domain: e.target.value }))}
-                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                              placeholder="company.com"
-                            />
-                          </div>
+                        <div className="space-y-2">
+                          <Label>New Password</Label>
+                          <Input
+                            type="password"
+                            value={passwordForm.newPassword}
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                          />
                         </div>
-                        <div>
-                            <Label htmlFor="companyEmail" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Company Email
-                          </Label>
-                          <div className="relative mt-1 sm:mt-2">
-                            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
-                            <Input
-                              id="companyEmail"
-                              type="email"
-                              value={companyForm.email}
-                              onChange={(e) => setCompanyForm(prev => ({ ...prev, email: e.target.value }))}
-                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                              placeholder="info@company.com"
-                            />
-                          </div>
+                        <div className="space-y-2">
+                          <Label>Confirm Password</Label>
+                          <Input
+                            type="password"
+                            value={passwordForm.confirmPassword}
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                          />
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                            <Label htmlFor="companyPhone" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Phone Number
-                          </Label>
-                          <div className="relative mt-1 sm:mt-2">
-                            <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
-                            <Input
-                              id="companyPhone"
-                              value={companyForm.phone}
-                              onChange={(e) => setCompanyForm(prev => ({ ...prev, phone: e.target.value }))}
-                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                              placeholder="+1 (555) 123-4567"
-                            />
-                          </div>
+                        <div className="pt-2">
+                          <Button type="submit" disabled={isPasswordUpdating} className="bg-slate-900 dark:bg-slate-700 text-white">
+                            {isPasswordUpdating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Update Password
+                          </Button>
                         </div>
-                        <div>
-                            <Label htmlFor="companyLogo" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Company Logo URL
-                          </Label>
-                          <div className="relative mt-1 sm:mt-2">
-                            <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
-                            <Input
-                              id="companyLogo"
-                              value={companyForm.logo}
-                              onChange={(e) => setCompanyForm(prev => ({ ...prev, logo: e.target.value }))}
-                                className="pl-10 sm:pl-11 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                              placeholder="https://example.com/logo.png"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      </form>
+                    </CardContent>
+                  </Card>
 
-                      <Separator className="my-4 sm:my-6" />
-
-                      <div>
-                        <Label className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 mb-3 sm:mb-4 block">
-                          <span className="hidden sm:inline">Company Address</span>
-                          <span className="sm:hidden">Address</span>
-                        </Label>
-                        <div className="space-y-3 sm:space-y-4">
+                  <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Shield className="h-5 w-5 text-red-600" />
+                        Security & Password Policy
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={handleSecuritySubmit} className="space-y-6">
+                        <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
                           <div>
-                            <Label htmlFor="street" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                              Street Address
-                            </Label>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Require Two-Factor Authentication</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Extra security for all users.</p>
+                          </div>
+                          <Switch
+                            checked={securitySettings.twoFactorRequired}
+                            onCheckedChange={(value) => setSecuritySettings(prev => ({ ...prev, twoFactorRequired: value }))}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Minimum Password Length</Label>
                             <Input
-                              id="street"
-                              value={companyForm.address.street}
-                              onChange={(e) => setCompanyForm(prev => ({ 
-                                ...prev, 
-                                address: { ...prev.address, street: e.target.value }
+                              type="number"
+                              min={6}
+                              value={securitySettings.passwordPolicy.minLength}
+                              onChange={(e) => setSecuritySettings(prev => ({
+                                ...prev,
+                                passwordPolicy: { ...prev.passwordPolicy, minLength: Number(e.target.value) }
                               }))}
-                              className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                              placeholder="123 Business Street"
                             />
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                            <div>
-                              <Label htmlFor="city" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                City
-                              </Label>
-                              <Input
-                                id="city"
-                                value={companyForm.address.city}
-                                onChange={(e) => setCompanyForm(prev => ({ 
-                                  ...prev, 
-                                  address: { ...prev.address, city: e.target.value }
-                                }))}
-                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                                placeholder="San Francisco"
-                              />
-                            </div>
-                            <div>
-                              <Label htmlFor="state" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                State/Province
-                              </Label>
-                              <Input
-                                id="state"
-                                value={companyForm.address.state}
-                                onChange={(e) => setCompanyForm(prev => ({ 
-                                  ...prev, 
-                                  address: { ...prev.address, state: e.target.value }
-                                }))}
-                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                                placeholder="California"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                            <div>
-                              <Label htmlFor="country" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                Country
-                              </Label>
-                              <Input
-                                id="country"
-                                value={companyForm.address.country}
-                                onChange={(e) => setCompanyForm(prev => ({ 
-                                  ...prev, 
-                                  address: { ...prev.address, country: e.target.value }
-                                }))}
-                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                                placeholder="United States"
-                              />
-                            </div>
-                            <div>
-                              <Label htmlFor="zipCode" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                ZIP/Postal Code
-                              </Label>
-                              <Input
-                                id="zipCode"
-                                value={companyForm.address.zipCode}
-                                onChange={(e) => setCompanyForm(prev => ({ 
-                                  ...prev, 
-                                  address: { ...prev.address, zipCode: e.target.value }
-                                }))}
-                                className="mt-1 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm"
-                                placeholder="94107"
-                              />
+                          <div className="space-y-2">
+                            <Label>Password Rules</Label>
+                            <div className="space-y-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">Require uppercase</span>
+                                <Switch
+                                  checked={securitySettings.passwordPolicy.requireUppercase}
+                                  onCheckedChange={(value) => setSecuritySettings(prev => ({
+                                    ...prev,
+                                    passwordPolicy: { ...prev.passwordPolicy, requireUppercase: value }
+                                  }))}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">Require lowercase</span>
+                                <Switch
+                                  checked={securitySettings.passwordPolicy.requireLowercase}
+                                  onCheckedChange={(value) => setSecuritySettings(prev => ({
+                                    ...prev,
+                                    passwordPolicy: { ...prev.passwordPolicy, requireLowercase: value }
+                                  }))}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">Require numbers</span>
+                                <Switch
+                                  checked={securitySettings.passwordPolicy.requireNumbers}
+                                  onCheckedChange={(value) => setSecuritySettings(prev => ({
+                                    ...prev,
+                                    passwordPolicy: { ...prev.passwordPolicy, requireNumbers: value }
+                                  }))}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">Require special characters</span>
+                                <Switch
+                                  checked={securitySettings.passwordPolicy.requireSpecialChars}
+                                  onCheckedChange={(value) => setSecuritySettings(prev => ({
+                                    ...prev,
+                                    passwordPolicy: { ...prev.passwordPolicy, requireSpecialChars: value }
+                                  }))}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                            <Label htmlFor="timezone" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Timezone
-                          </Label>
-                          <Select
-                            value={companyForm.timezone}
-                            onValueChange={(value) => setCompanyForm(prev => ({ ...prev, timezone: value }))}
-                          >
-                              <SelectTrigger className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm">
-                              <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 mr-2" />
-                              <SelectValue placeholder="Select timezone" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="UTC" className="text-xs sm:text-sm">UTC (Coordinated Universal Time)</SelectItem>
-                              <SelectItem value="America/New_York" className="text-xs sm:text-sm">Eastern Time (EST/EDT)</SelectItem>
-                              <SelectItem value="America/Chicago" className="text-xs sm:text-sm">Central Time (CST/CDT)</SelectItem>
-                              <SelectItem value="America/Denver" className="text-xs sm:text-sm">Mountain Time (MST/MDT)</SelectItem>
-                              <SelectItem value="America/Los_Angeles" className="text-xs sm:text-sm">Pacific Time (PST/PDT)</SelectItem>
-                              <SelectItem value="Europe/London" className="text-xs sm:text-sm">GMT (Greenwich Mean Time)</SelectItem>
-                              <SelectItem value="Asia/Kolkata" className="text-xs sm:text-sm">IST (India Standard Time)</SelectItem>
-                            </SelectContent>
-                          </Select>
+                        <div className="flex justify-end">
+                          <Button type="submit" disabled={updateSecurityMutation.isPending} className="bg-red-600 hover:bg-red-700">
+                            {updateSecurityMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                            Save Security Settings
+                          </Button>
                         </div>
-                        <div>
-                            <Label htmlFor="language" className="text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100">
-                            Language
-                          </Label>
-                          <Select
-                            value={companyForm.language}
-                            onValueChange={(value) => setCompanyForm(prev => ({ ...prev, language: value }))}
-                          >
-                              <SelectTrigger className="mt-1 sm:mt-2 border-slate-200 dark:border-slate-700 h-9 sm:h-10 text-xs sm:text-sm">
-                              <Languages className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 mr-2" />
-                              <SelectValue placeholder="Select language" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="en" className="text-xs sm:text-sm">English</SelectItem>
-                              <SelectItem value="es" className="text-xs sm:text-sm">Spanish</SelectItem>
-                              <SelectItem value="fr" className="text-xs sm:text-sm">French</SelectItem>
-                              <SelectItem value="de" className="text-xs sm:text-sm">German</SelectItem>
-                              <SelectItem value="it" className="text-xs sm:text-sm">Italian</SelectItem>
-                              <SelectItem value="pt" className="text-xs sm:text-sm">Portuguese</SelectItem>
-                              <SelectItem value="hi" className="text-xs sm:text-sm">Hindi</SelectItem>
-                            </SelectContent>
-                          </Select>
+                      </form>
+                    </CardContent>
+                  </Card>
+
+                </div>
+              )
+            )}
+
+            {/* Company Settings */}
+            {activeTab === 'company' && (
+              isCompanyLoading ? (
+                <CompanySkeleton />
+              ) : companyUnavailable ? (
+                <CompanyUnavailable />
+              ) : (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5 text-red-600" />
+                        Company Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={handleCompanySubmit} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <Label>Company Name</Label>
+                            <Input value={companyForm.name} onChange={(e) => setCompanyForm(prev => ({ ...prev, name: e.target.value }))} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Domain</Label>
+                            <Input value={companyForm.domain} onChange={(e) => setCompanyForm(prev => ({ ...prev, domain: e.target.value }))} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Email</Label>
+                            <Input value={companyForm.email} onChange={(e) => setCompanyForm(prev => ({ ...prev, email: e.target.value }))} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Phone</Label>
+                            <Input value={companyForm.phone} onChange={(e) => setCompanyForm(prev => ({ ...prev, phone: e.target.value }))} />
+                          </div>
                         </div>
-                      </div>
 
-                      <Separator className="my-4 sm:my-6" />
+                        <Separator />
 
-                      <div className="flex justify-end gap-2 sm:gap-3">
-                        <Button 
-                          type="submit" 
-                          disabled={updateCompanyMutation.isPending}
-                            className="bg-red-600 hover:bg-red-700 text-white h-8 sm:h-9 text-xs sm:text-sm px-3 sm:px-4"
-                        >
-                          {updateCompanyMutation.isPending ? (
-                            <>
-                              <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">Saving...</span>
-                              <span className="sm:hidden">Saving...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                              <span className="hidden sm:inline">Save Company</span>
-                              <span className="sm:hidden">Save</span>
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </form>
-                  )}
-                </CardContent>
-              </Card>
+                        <div className="space-y-4">
+                          <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100">Address</h4>
+                          <div className="space-y-2">
+                            <Label>Street</Label>
+                            <Input value={companyForm.address.street} onChange={(e) => setCompanyForm(prev => ({ ...prev, address: { ...prev.address, street: e.target.value } }))} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>City</Label>
+                              <Input value={companyForm.address.city} onChange={(e) => setCompanyForm(prev => ({ ...prev, address: { ...prev.address, city: e.target.value } }))} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>State</Label>
+                              <Input value={companyForm.address.state} onChange={(e) => setCompanyForm(prev => ({ ...prev, address: { ...prev.address, state: e.target.value } }))} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Country</Label>
+                              <Input value={companyForm.address.country} onChange={(e) => setCompanyForm(prev => ({ ...prev, address: { ...prev.address, country: e.target.value } }))} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Zip Code</Label>
+                              <Input value={companyForm.address.zipCode} onChange={(e) => setCompanyForm(prev => ({ ...prev, address: { ...prev.address, zipCode: e.target.value } }))} />
+                            </div>
+                          </div>
+                        </div>
 
-              {/* API Test */}
-              <ApiTest />
-              
-              {/* Simple Feature Test */}
-              <SimpleFeatureTest />
-              
-              {/* Feature Debug Panel */}
-              <FeatureDebugPanel />
-              
-              {/* Feature Test Panel */}
-              <FeatureTestPanel />
-              
-              {/* Feature Access Status */}
-              <FeatureAccessStatus />
-          </TabsContent>
-        </Tabs>
+                        <div className="flex justify-end">
+                          <Button type="submit" disabled={updateCompanyMutation.isPending} className="bg-red-600 hover:bg-red-700">
+                            {updateCompanyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                            Save Company Details
+                          </Button>
+                        </div>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </div>
+              )
+            )}
+
+            {/* Notifications Settings (Placeholder) */}
+            {activeTab === 'notifications' && (
+              isCompanyLoading ? (
+                <NotificationsSkeleton />
+              ) : companyUnavailable ? (
+                <CompanyUnavailable />
+              ) : (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <Card className="border-slate-200 dark:border-slate-700 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Bell className="h-5 w-5 text-red-600" />
+                        Notification Preferences
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form onSubmit={handleNotificationsSubmit} className="space-y-4">
+                        <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Email Notifications</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Updates and summaries to your inbox.</p>
+                          </div>
+                          <Switch
+                            checked={notificationPrefs.email}
+                            onCheckedChange={(value) => setNotificationPrefs(prev => ({ ...prev, email: value }))}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Push Notifications</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Realtime alerts on your device.</p>
+                          </div>
+                          <Switch
+                            checked={notificationPrefs.push}
+                            onCheckedChange={(value) => setNotificationPrefs(prev => ({ ...prev, push: value }))}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">SMS Notifications</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Critical alerts via text message.</p>
+                          </div>
+                          <Switch
+                            checked={notificationPrefs.sms}
+                            onCheckedChange={(value) => setNotificationPrefs(prev => ({ ...prev, sms: value }))}
+                          />
+                        </div>
+                        <div className="pt-2 flex justify-end">
+                          <Button type="submit" disabled={updateNotificationMutation.isPending} className="bg-red-600 hover:bg-red-700">
+                            {updateNotificationMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                            Save Preferences
+                          </Button>
+                        </div>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </div>
+              )
+            )}
+
+            {/* Developer Settings */}
+            {activeTab === 'developer' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="grid grid-cols-1 gap-6">
+                  <ApiTest />
+                  <SimpleFeatureTest />
+                  <FeatureDebugPanel />
+                  <FeatureTestPanel />
+                  <FeatureAccessStatus />
+                </div>
+              </div>
+            )}
+
           </div>
-
         </div>
       </div>
     </div>

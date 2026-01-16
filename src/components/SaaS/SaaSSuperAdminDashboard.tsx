@@ -9,44 +9,23 @@ import {
   Users, 
   DollarSign, 
   TrendingUp,
-  TrendingDown,
   AlertCircle,
-  CheckCircle,
   Clock,
-  Activity,
-  FileText,
   Calendar,
-  Database,
-  Bell,
-  Shield,
   CreditCard,
   UserPlus,
-  MessageSquare,
-  Settings,
   RefreshCw,
-  Download,
-  Plus,
-  Eye,
-  Zap,
-  BarChart3,
   PieChart,
   ArrowUpRight,
   ArrowDownRight,
-  Timer,
-  Server,
   HardDrive,
-  Crown,
-  Star,
   Briefcase,
-  Mail
+  Mail,
+  Timer
 } from 'lucide-react';
 import {
   LineChart,
   Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
   PieChart as RechartsPieChart,
   Pie,
   Cell,
@@ -64,19 +43,17 @@ export default function SaaSSuperAdminDashboard() {
   const [stats, setStats] = useState<SaaSDashboardStats | null>(null);
   const [monthlyTrends, setMonthlyTrends] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const loadDashboardStats = async () => {
     try {
       console.log('📊 Loading enhanced SaaS dashboard stats...');
-      const [dashboardData, trendsData] = await Promise.all([
-        saasService.getDashboardStats(),
-        saasService.getMonthlyTrends()
-      ]);
+      const dashboardData = await saasService.getDashboardStats();
 
       setStats(dashboardData);
-      setMonthlyTrends(trendsData);
+      setMonthlyTrends((dashboardData as any)?.monthlyTrends || []);
+      setLastUpdated(new Date().toLocaleString());
       console.log('✅ Enhanced dashboard stats loaded:', dashboardData);
-      console.log('✅ Monthly trends loaded:', trendsData);
     } catch (error) {
       console.error('❌ Error loading dashboard stats:', error);
       toast.error('Failed to load dashboard statistics');
@@ -117,24 +94,6 @@ export default function SaaSSuperAdminDashboard() {
     );
   }
 
-  // Chart colors
-  const colors = {
-    primary: '#3B82F6',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#06B6D4',
-    purple: '#8B5CF6'
-  };
-
-  // Plan distribution chart data - Include all 4 categories
-  const planChartData = [
-    { name: 'Free', value: stats.planDistribution.free || 0, color: colors.success },
-    { name: 'Basic', value: stats.planDistribution.basic || 0, color: colors.info },
-    { name: 'Premium', value: stats.planDistribution.premium || 0, color: colors.primary },
-    { name: 'Enterprise', value: stats.planDistribution.enterprise || 0, color: colors.purple }
-  ];
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -152,6 +111,27 @@ export default function SaaSSuperAdminDashboard() {
     return num.toString();
   };
 
+  // Chart colors
+  const colors = {
+    primary: '#3B82F6',
+    success: '#10B981',
+    warning: '#F59E0B',
+    error: '#EF4444',
+    info: '#06B6D4',
+    purple: '#8B5CF6'
+  };
+
+  // Plan distribution data for charts
+  const planChartData = (() => {
+    const dist = stats?.planDistribution || { free: 0, basic: 0, premium: 0, enterprise: 0 };
+    return [
+      { name: 'Free', value: dist.free || 0, color: colors.success },
+      { name: 'Basic', value: dist.basic || 0, color: colors.info },
+      { name: 'Premium', value: dist.premium || 0, color: colors.primary },
+      { name: 'Enterprise', value: dist.enterprise || 0, color: colors.purple }
+    ];
+  })();
+
   const GrowthIndicator = ({ value, label }: { value: number; label: string }) => (
     <div className="flex items-center space-x-1">
       {value >= 0 ? (
@@ -167,6 +147,122 @@ export default function SaaSSuperAdminDashboard() {
 
   return (
     <div className="space-y-6 sm:space-y-8 p-3 sm:p-6 bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 min-h-screen">
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 dark:border-slate-800/70 bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-800 text-white shadow-2xl">
+        <div className="absolute inset-0 opacity-50 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,0.18),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(255,255,255,0.12),transparent_28%),radial-gradient(circle_at_50%_80%,rgba(255,255,255,0.15),transparent_30%)]" />
+        <div className="relative p-5 sm:p-7 flex flex-col gap-5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 border border-white/25 text-[11px] font-semibold uppercase tracking-wide">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Live Command Center
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-2xl sm:text-3xl font-extrabold leading-tight drop-shadow-sm">
+                  Super Admin Control Center
+                </h2>
+                <p className="text-sm text-slate-100/85">
+                  Platform health, revenue, and company telemetry in one glassy view.
+                </p>
+              </div>
+              {lastUpdated && (
+                <div className="flex items-center gap-2 text-xs text-slate-100/70">
+                  <Timer className="h-3.5 w-3.5" />
+                  Last synced: {lastUpdated}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadDashboardStats}
+                className="bg-white/10 border-white/30 text-white hover:bg-white/20"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Data
+              </Button>
+              <Button
+                size="sm"
+                className="bg-white text-slate-900 hover:bg-slate-100 shadow-lg"
+              >
+                View Reports
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-2xl bg-white/12 border border-white/15 p-4 backdrop-blur">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-100/70">
+                <span>Monthly Revenue</span>
+                <DollarSign className="h-4 w-4 text-emerald-200" />
+              </div>
+              <div className="mt-2 text-2xl font-semibold drop-shadow-sm">
+                {formatCurrency(stats.monthlyRevenue || 0)}
+              </div>
+              <div className="mt-1 text-xs text-emerald-100">
+                {stats.growth.revenue >= 0 ? '+' : ''}{stats.growth.revenue}% vs last month
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white/12 border border-white/15 p-4 backdrop-blur">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-100/70">
+                <span>Active Companies</span>
+                <Building2 className="h-4 w-4 text-blue-200" />
+              </div>
+              <div className="mt-2 text-2xl font-semibold drop-shadow-sm">
+                {formatNumber(stats.activeCompanies || 0)}
+              </div>
+              <div className="mt-1 text-xs text-blue-100">
+                {stats.trialCompanies} on trial
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white/12 border border-white/15 p-4 backdrop-blur">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-100/70">
+                <span>Active Users Today</span>
+                <Users className="h-4 w-4 text-indigo-200" />
+              </div>
+              <div className="mt-2 text-2xl font-semibold drop-shadow-sm">
+                {formatNumber(stats.activeUsersToday || 0)}
+              </div>
+              <div className="mt-1 text-xs text-indigo-100">
+                {stats.activeUsers} weekly active
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {stats.alerts && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-900/20">
+            <CardContent className="p-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold">Expiring Soon</p>
+                <p className="text-lg font-bold text-amber-800 dark:text-amber-200">{stats.alerts.expiringSoon ?? 0}</p>
+              </div>
+              <Clock className="h-5 w-5 text-amber-600 dark:text-amber-300" />
+            </CardContent>
+          </Card>
+          <Card className="border-red-200 bg-red-50/70 dark:border-red-800 dark:bg-red-900/20">
+            <CardContent className="p-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-red-700 dark:text-red-300 font-semibold">Payment Failures</p>
+                <p className="text-lg font-bold text-red-800 dark:text-red-200">{stats.alerts.paymentFailures ?? 0}</p>
+              </div>
+              <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-300" />
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50/70 dark:border-blue-800 dark:bg-blue-900/20">
+            <CardContent className="p-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold">Security Alerts</p>
+                <p className="text-lg font-bold text-blue-800 dark:text-blue-200">{stats.alerts.securityAlerts ?? 0}</p>
+              </div>
+              <HardDrive className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {/* Total Companies */}
@@ -185,7 +281,7 @@ export default function SaaSSuperAdminDashboard() {
             <GrowthIndicator value={stats.growth.companies} label="this month" />
             <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
               {stats.activeCompanies} active, {stats.trialCompanies} on trial
-              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -205,7 +301,7 @@ export default function SaaSSuperAdminDashboard() {
             <GrowthIndicator value={stats.growth.users} label="this month" />
             <div className="mt-2 text-xs text-green-600 dark:text-green-400">
               {stats.activeUsersToday} active users today
-              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -225,7 +321,7 @@ export default function SaaSSuperAdminDashboard() {
             <GrowthIndicator value={stats.growth.revenue} label="vs last month" />
             <div className="mt-2 text-xs text-purple-600 dark:text-purple-400">
               {formatCurrency(stats.yearlyRevenue)} annually
-              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -247,7 +343,7 @@ export default function SaaSSuperAdminDashboard() {
             </div>
             <div className="mt-2 text-xs text-orange-600 dark:text-orange-400">
               {stats.newSignups.today} today, {stats.newSignups.week} this week
-              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -265,7 +361,7 @@ export default function SaaSSuperAdminDashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={monthlyTrends}>
+              <LineChart data={monthlyTrends || []}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -277,7 +373,7 @@ export default function SaaSSuperAdminDashboard() {
                     <div className="bg-white p-3 rounded shadow-lg text-sm">
                       <div className="font-medium mb-2 text-gray-700">{`Day ${label}`}</div>
                       {payload.map((entry: any, idx: number) => {
-                        const seriesName = entry.name || entry.dataKey || Object.keys(entry.payload || {}).find((k: string) => !['day','month','date'].includes(k)) || `Series ${idx+1}`;
+                        const seriesName = entry.name || entry.dataKey || Object.keys(entry.payload || {}).find((k: string) => !['day', 'month', 'date'].includes(k)) || `Series ${idx + 1}`;
                         const isRevenue = String(seriesName).toLowerCase().includes('revenue') || entry.dataKey === 'revenue';
                         const formattedValue = isRevenue ? formatCurrency(Number(entry.value)) : formatNumber(Number(entry.value));
                         const seriesColor = entry.stroke || entry.color || entry.fill || (entry.dataKey === 'revenue' ? colors.primary : entry.dataKey === 'companies' ? colors.success : colors.purple);
@@ -305,48 +401,56 @@ export default function SaaSSuperAdminDashboard() {
         </Card>
 
         {/* Plan Distribution */}
-      <Card>
-        <CardHeader>
+        <Card>
+          <CardHeader>
             <CardTitle className="flex items-center text-sm sm:text-base">
               <PieChart className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
               <span className="hidden sm:inline">📊 Plan Distribution</span>
               <span className="sm:hidden">📊 Plans</span>
             </CardTitle>
-        </CardHeader>
-        <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <RechartsPieChart>
-                <Pie
-                  data={planChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={40}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
+          </CardHeader>
+          <CardContent>
+            {planChartData.some(item => item.value > 0) ? (
+              <>
+                <ResponsiveContainer width="100%" height={250}>
+                  <RechartsPieChart>
+                    <Pie
+                      data={planChartData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {planChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => [value, 'Companies']} />
+                    <Legend />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+                <div className="mt-4 space-y-2">
                   {planChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <div key={index} className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div
+                          className="w-3 h-3 rounded-full mr-2"
+                          style={{ backgroundColor: entry.color }}
+                        />
+                        <span className="text-sm">{entry.name}</span>
+                      </div>
+                      <span className="text-sm font-medium">{entry.value}</span>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip formatter={(value) => [value, 'Companies']} />
-                <Legend />
-              </RechartsPieChart>
-            </ResponsiveContainer>
-            <div className="mt-4 space-y-2">
-              {planChartData.map((entry, index) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div 
-                      className="w-3 h-3 rounded-full mr-2" 
-                      style={{ backgroundColor: entry.color }}
-                    />
-                    <span className="text-sm">{entry.name}</span>
-                  </div>
-                  <span className="text-sm font-medium">{entry.value}</span>
+                </div>
+              </>
+            ) : (
+              <div className="text-center text-sm text-muted-foreground py-10">
+                No plan distribution data available
               </div>
-              ))}
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -384,8 +488,8 @@ export default function SaaSSuperAdminDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {stats.recentActivities.companies.map((company, index) => (
-                    <div key={index} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                  {(stats.recentActivities.companies || []).map((company, index) => (
+                    <div key={company.id || company._id || index} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start space-x-3">
                           <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-lg flex items-center justify-center text-white font-bold">
@@ -406,22 +510,31 @@ export default function SaaSSuperAdminDashboard() {
                           </div>
                         </div>
                         <div className="flex flex-col items-end space-y-1">
-                          <Badge 
-                            variant={company.plan === 'enterprise' ? 'default' : 'outline'}
-                            className={`text-xs ${
-                              company.plan === 'enterprise' ? 'bg-purple-500' : 
-                              company.plan === 'pro' ? 'bg-blue-500' : 'bg-gray-500'
-                            }`}
-                          >
-                            {company.plan}
-                          </Badge>
-                          <Badge 
+                          {(() => {
+                            const planRaw = (company.plan || '').toString();
+                            const planKey = planRaw.toLowerCase();
+                            const isEnterprise = planKey.includes('enterprise');
+                            const isPro = planKey.includes('pro') || planKey.includes('premium');
+                            const badgeClass = isEnterprise
+                              ? 'bg-purple-500'
+                              : isPro
+                                ? 'bg-blue-500'
+                                : 'bg-gray-500';
+                            return (
+                              <Badge
+                                variant={isEnterprise ? 'default' : 'outline'}
+                                className={`text-xs ${badgeClass}`}
+                              >
+                                {planRaw || 'Unknown'}
+                              </Badge>
+                            );
+                          })()}
+                          <Badge
                             variant={company.status === 'active' ? 'outline' : 'destructive'}
                             className="text-xs"
                           >
-                            <div className={`w-2 h-2 rounded-full mr-1 ${
-                              company.status === 'active' ? 'bg-green-500' : 'bg-red-500'
-                            }`} />
+                            <div className={`w-2 h-2 rounded-full mr-1 ${company.status === 'active' ? 'bg-green-500' : 'bg-red-500'
+                              }`} />
                             {company.status}
                           </Badge>
                         </div>
@@ -449,15 +562,14 @@ export default function SaaSSuperAdminDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {stats.recentActivities.payments.map((payment, index) => (
-                    <div key={index} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                  {(stats.recentActivities.payments || []).map((payment, index) => (
+                    <div key={payment.id || payment._id || index} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            payment.status === 'completed' 
-                              ? 'bg-gradient-to-br from-green-400 to-emerald-500' 
-                              : 'bg-gradient-to-br from-yellow-400 to-orange-500'
-                          }`}>
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${payment.status === 'completed'
+                            ? 'bg-gradient-to-br from-green-400 to-emerald-500'
+                            : 'bg-gradient-to-br from-yellow-400 to-orange-500'
+                            }`}>
                             <DollarSign className="h-5 w-5 text-white" />
                           </div>
                           <div className="flex-1">
@@ -465,7 +577,7 @@ export default function SaaSSuperAdminDashboard() {
                               {payment.company}
                             </div>
                             <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                              Invoice #{Math.floor(Math.random() * 10000)}
+                              Invoice #INV-{String(index + 1).padStart(4, '0')}
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-500 flex items-center mt-1">
                               <Calendar className="h-3 w-3 mr-1" />
@@ -477,13 +589,12 @@ export default function SaaSSuperAdminDashboard() {
                           <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
                             {formatCurrency(payment.amount)}
                           </div>
-                          <Badge 
+                          <Badge
                             variant={payment.status === 'completed' ? 'default' : 'secondary'}
-                            className={`text-xs mt-1 ${
-                              payment.status === 'completed' 
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' 
-                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
-                            }`}
+                            className={`text-xs mt-1 ${payment.status === 'completed'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
+                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
+                              }`}
                           >
                             {payment.status === 'completed' ? '✓ Paid' : '⏳ Pending'}
                           </Badge>
@@ -503,105 +614,105 @@ export default function SaaSSuperAdminDashboard() {
             {/* Tasks Card */}
             <Card className="border border-cyan-200/50 dark:border-cyan-800/50 bg-gradient-to-br from-cyan-50/50 to-blue-50/50 dark:from-cyan-950/30 dark:to-blue-950/30 shadow-md hover:shadow-lg transition-all duration-300">
               <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-cyan-100 dark:bg-cyan-900/50 rounded-xl shadow-sm">
-                      <Briefcase className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
-                    </div>
+                    <Briefcase className="h-6 w-6 text-cyan-600 dark:text-cyan-400" />
+                  </div>
                   <Badge variant="outline" className="text-cyan-700 border-cyan-200 bg-cyan-50">
                     {stats.growth.companies > 0 ? `+${stats.growth.companies}%` : `${stats.growth.companies}%`}
-                    </Badge>
-                  </div>
+                  </Badge>
+                </div>
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-medium">
-                      Total Tasks Created
-                    </p>
+                    Total Tasks Created
+                  </p>
                   <div className="text-3xl font-bold text-cyan-600 dark:text-cyan-400">
-                      {formatNumber(stats.systemHealth.totalTasks)}
-                    </div>
-                  <Progress value={Math.min((stats.systemHealth.totalTasks / 1000) * 100, 100)} className="h-2 bg-cyan-100 dark:bg-cyan-900/30" />
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {Math.round((stats.systemHealth.totalTasks / 1000) * 100)}% of monthly target
-                    </p>
+                    {formatNumber((stats.systemHealth.totalTasks || 0))}
                   </div>
-                </CardContent>
+                  <Progress value={Math.min((stats.systemHealth.totalTasks / 1000) * 100, 100)} className="h-2 bg-cyan-100 dark:bg-cyan-900/30" />
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    {Math.round(((stats.systemHealth.totalTasks || 0) / 1000) * 100)}% of monthly target
+                  </p>
+                </div>
+              </CardContent>
             </Card>
 
             {/* Meetings Card */}
             <Card className="border border-indigo-200/50 dark:border-indigo-800/50 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/30 dark:to-purple-950/30 shadow-md hover:shadow-lg transition-all duration-300">
               <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl shadow-sm">
-                      <Calendar className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
-                    </div>
+                    <Calendar className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                  </div>
                   <Badge variant="outline" className="text-indigo-700 border-indigo-200 bg-indigo-50">
                     {stats.growth.users > 0 ? `+${stats.growth.users}%` : `${stats.growth.users}%`}
-                    </Badge>
-                  </div>
+                  </Badge>
+                </div>
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-medium">
-                      Meetings Scheduled
-                    </p>
+                    Meetings Scheduled
+                  </p>
                   <div className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">
-                      {formatNumber(stats.systemHealth.totalMeetings)}
-                    </div>
-                  <Progress value={Math.min((stats.systemHealth.totalMeetings / 500) * 100, 100)} className="h-2 bg-indigo-100 dark:bg-indigo-900/30" />
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {Math.round((stats.systemHealth.totalMeetings / 500) * 100)}% capacity utilized
-                    </p>
+                    {formatNumber((stats.systemHealth.totalMeetings || 0))}
                   </div>
-                </CardContent>
+                  <Progress value={Math.min((stats.systemHealth.totalMeetings / 500) * 100, 100)} className="h-2 bg-indigo-100 dark:bg-indigo-900/30" />
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    {Math.round(((stats.systemHealth.totalMeetings || 0) / 500) * 100)}% capacity utilized
+                  </p>
+                </div>
+              </CardContent>
             </Card>
 
             {/* Leave Requests Card */}
             <Card className="border border-pink-200/50 dark:border-pink-800/50 bg-gradient-to-br from-pink-50/50 to-rose-50/50 dark:from-pink-950/30 dark:to-rose-950/30 shadow-md hover:shadow-lg transition-all duration-300">
               <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-pink-100 dark:bg-pink-900/50 rounded-xl shadow-sm">
-                      <Timer className="h-6 w-6 text-pink-600 dark:text-pink-400" />
-                    </div>
+                    <Timer className="h-6 w-6 text-pink-600 dark:text-pink-400" />
+                  </div>
                   <Badge variant="outline" className="text-pink-700 border-pink-200 bg-pink-50">
                     {stats.growth.revenue > 0 ? `+${stats.growth.revenue}%` : `${stats.growth.revenue}%`}
-                    </Badge>
-                  </div>
+                  </Badge>
+                </div>
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-medium">
-                      Leave Requests
-                    </p>
+                    Leave Requests
+                  </p>
                   <div className="text-3xl font-bold text-pink-600 dark:text-pink-400">
-                      {formatNumber(stats.systemHealth.totalLeaves)}
-                    </div>
-                  <Progress value={Math.min((stats.systemHealth.totalLeaves / 200) * 100, 100)} className="h-2 bg-pink-100 dark:bg-pink-900/30" />
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      Across all companies
-                    </p>
+                    {formatNumber((stats.systemHealth.totalLeaves || 0))}
                   </div>
-                </CardContent>
+                  <Progress value={Math.min((stats.systemHealth.totalLeaves / 200) * 100, 100)} className="h-2 bg-pink-100 dark:bg-pink-900/30" />
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    Across all companies
+                  </p>
+                </div>
+              </CardContent>
             </Card>
 
             {/* Storage Card */}
             <Card className="border border-amber-200/50 dark:border-amber-800/50 bg-gradient-to-br from-amber-50/50 to-orange-50/50 dark:from-amber-950/30 dark:to-orange-950/30 shadow-md hover:shadow-lg transition-all duration-300">
               <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4">
                   <div className="p-3 bg-amber-100 dark:bg-amber-900/50 rounded-xl shadow-sm">
-                      <HardDrive className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-                    </div>
-                  <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50">
-                      {stats.systemHealth.storageUsed}%
-                    </Badge>
+                    <HardDrive className="h-6 w-6 text-amber-600 dark:text-amber-400" />
                   </div>
+                  <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50">
+                    {stats.systemHealth.storageUsed || 0}%
+                  </Badge>
+                </div>
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-medium">
-                      Storage Usage
-                    </p>
+                    Storage Usage
+                  </p>
                   <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">
-                      {stats.systemHealth.storageUsed} GB
-                    </div>
-                  <Progress value={(stats.systemHealth.storageUsed / 100) * 100} className="h-2 bg-amber-100 dark:bg-amber-900/30" />
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      of 100 GB total
-                    </p>
+                    {stats.systemHealth.storageUsed || 0}% of 100 GB
                   </div>
-                </CardContent>
+                  <Progress value={(stats.systemHealth.storageUsed || 0)} className="h-2 bg-amber-100 dark:bg-amber-900/30" />
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    Overall platform storage utilization
+                  </p>
+                </div>
+              </CardContent>
             </Card>
           </div>
 

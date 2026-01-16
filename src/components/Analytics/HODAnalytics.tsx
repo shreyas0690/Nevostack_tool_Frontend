@@ -1,11 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  BarChart3, 
-  TrendingUp, 
-  Users, 
-  ClipboardList, 
+import {
+  BarChart3,
+  TrendingUp,
+  Users,
+  ClipboardList,
   Calendar,
   Target,
   Award,
@@ -23,13 +23,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { analyticsService } from '@/services/analyticsService';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   PieChart as RechartsPieChart,
   Pie,
@@ -45,11 +45,43 @@ export default function HODAnalytics() {
   const { currentUser } = useAuth();
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  
+  const currentUserId = currentUser?.id ? String(currentUser.id) : '';
+  const shouldExcludeHod = currentUser?.role === 'department_head' && !!currentUserId;
+
+  const getSafeId = (value: any) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    if (typeof value === 'object') return String(value.id || value._id || value.userId || '');
+    return '';
+  };
+
+  const collectAssigneeIds = (value: any): string[] => {
+    if (value === null || value === undefined) return [];
+    if (Array.isArray(value)) {
+      return value.flatMap(collectAssigneeIds);
+    }
+    if (typeof value === 'object') {
+      const id = getSafeId(value);
+      if (id) return [id];
+      if (value.email) return [String(value.email)];
+      return [];
+    }
+    return [String(value)];
+  };
+
+  const isTaskAssignedToUser = (task: any, userId: string) => {
+    if (!userId) return false;
+    const ids = [
+      ...collectAssigneeIds(task?.assignedTo),
+      ...collectAssigneeIds(task?.assignedToList)
+    ];
+    return ids.some((id) => id === userId);
+  };
+
   // Debounced filters to prevent too many API calls
   const [debouncedTimeRange, setDebouncedTimeRange] = useState(timeRange);
   const [debouncedStatusFilter, setDebouncedStatusFilter] = useState(statusFilter);
-  
+
   // Debounce time range changes
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -57,7 +89,7 @@ export default function HODAnalytics() {
     }, 500);
     return () => clearTimeout(timer);
   }, [timeRange]);
-  
+
   // Debounce status filter changes
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -65,7 +97,7 @@ export default function HODAnalytics() {
     }, 300);
     return () => clearTimeout(timer);
   }, [statusFilter]);
-  
+
   // Fetch HOD analytics data from backend with better caching
   const { data: analyticsResponse, isLoading, isError, error } = useQuery({
     queryKey: ['hod', 'analytics', currentUser?.companyId, currentUser?.departmentId, debouncedTimeRange, debouncedStatusFilter],
@@ -77,6 +109,10 @@ export default function HODAnalytics() {
         }
         if (currentUser?.departmentId) {
           params.departmentId = currentUser.departmentId;
+        }
+        if (shouldExcludeHod) {
+          params.excludeSelf = true;
+          params.excludeUserId = currentUserId;
         }
         const res: any = await analyticsService.getHODAnalytics(params);
         return res?.data || null;
@@ -94,45 +130,62 @@ export default function HODAnalytics() {
   });
 
   // Fallback to mock data if backend fails
-  const userDepartment = analyticsResponse?.department || (currentUser?.departmentId ? 
+  const userDepartment = analyticsResponse?.department || (currentUser?.departmentId ?
     mockDepartments.find(d => d.id === currentUser.departmentId) : null);
 
-  const departmentMembers = analyticsResponse?.department ? 
-    [] : (userDepartment ? mockUsers.filter(u => userDepartment.memberIds.includes(u.id)) : []);
-  
+  const responseMembers = (analyticsResponse as any)?.departmentMembers || (analyticsResponse as any)?.members || [];
+  const fallbackMembers = userDepartment ? mockUsers.filter(u => userDepartment.memberIds.includes(u.id)) : [];
+  const filteredFallbackMembers = shouldExcludeHod
+    ? fallbackMembers.filter(member => getSafeId(member.id) !== currentUserId)
+    : fallbackMembers;
+  const departmentMembers = Array.isArray(responseMembers) && responseMembers.length > 0
+    ? (shouldExcludeHod ? responseMembers.filter((member: any) => getSafeId(member.id || member._id) !== currentUserId) : responseMembers)
+    : filteredFallbackMembers;
+
   const getFilteredTasks = () => {
-    let filteredTasks = userDepartment ? 
-      mockTasks.filter(t => t.departmentId === userDepartment.id) : [];
-    
+    const baseTasks = userDepartment ? mockTasks.filter(t => t.departmentId === userDepartment.id) : [];
+    let filteredTasks = shouldExcludeHod
+      ? baseTasks.filter(task => !isTaskAssignedToUser(task, currentUserId))
+      : baseTasks;
+
     if (timeRange !== 'all') {
       const days = parseInt(timeRange.replace('d', ''));
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
       filteredTasks = filteredTasks.filter(t => t.createdAt >= cutoffDate);
     }
-    
+
     if (statusFilter !== 'all') {
       filteredTasks = filteredTasks.filter(t => t.status === statusFilter);
     }
-    
+
     return filteredTasks;
   };
-  
-  const departmentTasks = analyticsResponse ? [] : getFilteredTasks();
+
+  const fallbackTasks = getFilteredTasks();
 
   // Use backend data or calculate from mock data
   const summary = analyticsResponse?.summary;
-  const totalMembers = summary?.totalMembers || departmentMembers.length;
-  const activeMembers = summary?.activeMembers || departmentMembers.filter(m => m.isActive).length;
-  const totalTasks = summary?.totalTasks || departmentTasks.length;
-  const completedTasks = summary?.completedTasks || departmentTasks.filter(t => t.status === 'completed').length;
-  const inProgressTasks = summary?.inProgressTasks || departmentTasks.filter(t => t.status === 'in_progress').length;
-  const assignedTasks = summary?.assignedTasks || departmentTasks.filter(t => t.status === 'assigned').length;
-  const blockedTasks = summary?.blockedTasks || departmentTasks.filter(t => t.status === 'blocked').length;
-  const completionRate = summary?.completionRate || (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0);
-  const avgTasksPerMember = summary?.avgTasksPerMember || (totalMembers > 0 ? Math.round(totalTasks / totalMembers) : 0);
-  const urgentTasks = summary?.urgentTasks || departmentTasks.filter(t => t.priority === 'urgent' && t.status !== 'completed').length;
-  
+  const rawRoleData = analyticsResponse?.charts?.roleData;
+  const hasHeadInRoleData = Array.isArray(rawRoleData)
+    ? rawRoleData.some((entry: any) => String(entry?.name || '').toLowerCase() === 'head' && (entry?.value || 0) > 0)
+    : false;
+  const shouldAdjustSummaryForHod = shouldExcludeHod && hasHeadInRoleData;
+  const totalMembers = summary?.totalMembers ?? departmentMembers.length;
+  const activeMembers = summary?.activeMembers ?? departmentMembers.filter(m => m.isActive).length;
+  const adjustedTotalMembers = shouldAdjustSummaryForHod ? Math.max(totalMembers - 1, 0) : totalMembers;
+  const adjustedActiveMembers = shouldAdjustSummaryForHod ? Math.max(activeMembers - 1, 0) : activeMembers;
+  const totalTasks = summary?.totalTasks ?? fallbackTasks.length;
+  const completedTasks = summary?.completedTasks ?? fallbackTasks.filter(t => t.status === 'completed').length;
+  const inProgressTasks = summary?.inProgressTasks ?? fallbackTasks.filter(t => t.status === 'in_progress').length;
+  const assignedTasks = summary?.assignedTasks ?? fallbackTasks.filter(t => t.status === 'assigned').length;
+  const blockedTasks = summary?.blockedTasks ?? fallbackTasks.filter(t => t.status === 'blocked').length;
+  const completionRate = summary?.completionRate ?? (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0);
+  const avgTasksPerMember = summary?.avgTasksPerMember && !shouldAdjustSummaryForHod
+    ? summary.avgTasksPerMember
+    : (adjustedTotalMembers > 0 ? Math.round(totalTasks / adjustedTotalMembers) : 0);
+  const urgentTasks = summary?.urgentTasks ?? fallbackTasks.filter(t => t.priority === 'urgent' && t.status !== 'completed').length;
+
   // Chart colors
   const COLORS = {
     primary: '#3B82F6',
@@ -156,23 +209,23 @@ export default function HODAnalytics() {
   const priorityData = analyticsResponse?.charts?.priorityData || [
     {
       name: 'Urgent',
-      value: departmentTasks.filter(t => t.priority === 'urgent' && t.status !== 'completed').length,
+      value: fallbackTasks.filter(t => t.priority === 'urgent' && t.status !== 'completed').length,
       color: COLORS.danger
     },
-    { 
-      name: 'High', 
-      value: departmentTasks.filter(t => t.priority === 'high').length,
-      color: COLORS.warning 
+    {
+      name: 'High',
+      value: fallbackTasks.filter(t => t.priority === 'high').length,
+      color: COLORS.warning
     },
-    { 
-      name: 'Medium', 
-      value: departmentTasks.filter(t => t.priority === 'medium').length,
-      color: COLORS.primary 
+    {
+      name: 'Medium',
+      value: fallbackTasks.filter(t => t.priority === 'medium').length,
+      color: COLORS.primary
     },
-    { 
-      name: 'Low', 
-      value: departmentTasks.filter(t => t.priority === 'low').length,
-      color: COLORS.success 
+    {
+      name: 'Low',
+      value: fallbackTasks.filter(t => t.priority === 'low').length,
+      color: COLORS.success
     }
   ];
 
@@ -185,13 +238,13 @@ export default function HODAnalytics() {
 
   const taskTrendData = analyticsResponse?.charts?.taskTrendData || last7Days.map(date => {
     const dateStr = date.toISOString().split('T')[0];
-    const tasksCreated = departmentTasks.filter(task => 
+    const tasksCreated = fallbackTasks.filter(task =>
       task.createdAt.toISOString().split('T')[0] === dateStr
     ).length;
-    const tasksCompleted = departmentTasks.filter(task => 
+    const tasksCompleted = fallbackTasks.filter(task =>
       task.updatedAt.toISOString().split('T')[0] === dateStr && task.status === 'completed'
     ).length;
-    
+
     return {
       date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       created: tasksCreated,
@@ -201,39 +254,50 @@ export default function HODAnalytics() {
   });
 
   // Team role distribution
-  const roleData = analyticsResponse?.charts?.roleData || [
-    { 
-      name: 'Head', 
+  const adjustedRoleDataFromCharts = shouldExcludeHod && Array.isArray(rawRoleData)
+    ? rawRoleData
+        .map((entry: any) => {
+          if (String(entry?.name || '').toLowerCase() === 'head') {
+            return { ...entry, value: Math.max((entry?.value || 0) - 1, 0) };
+          }
+          return entry;
+        })
+        .filter((entry: any) => (entry?.value || 0) > 0)
+    : rawRoleData;
+
+  const roleData = adjustedRoleDataFromCharts || [
+    {
+      name: 'Head',
       value: departmentMembers.filter(m => m.role === 'department_head').length,
-      color: COLORS.purple 
+      color: COLORS.purple
     },
-    { 
-      name: 'Managers', 
+    {
+      name: 'Managers',
       value: departmentMembers.filter(m => m.role === 'manager').length,
-      color: COLORS.primary 
+      color: COLORS.primary
     },
-    { 
-      name: 'Members', 
+    {
+      name: 'Members',
       value: departmentMembers.filter(m => m.role === 'member').length,
-      color: COLORS.success 
+      color: COLORS.success
     }
   ];
 
   // Performance metrics over time
   const performanceData = analyticsResponse?.charts?.performanceData || last7Days.map(date => {
     const dateStr = date.toISOString().split('T')[0];
-    const dayTasks = departmentTasks.filter(task => 
+    const dayTasks = fallbackTasks.filter(task =>
       task.updatedAt.toISOString().split('T')[0] <= dateStr
     );
     const dayCompleted = dayTasks.filter(t => t.status === 'completed').length;
     const dayTotal = dayTasks.length;
     const efficiency = dayTotal > 0 ? Math.round((dayCompleted / dayTotal) * 100) : 0;
-    
+
     return {
       date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       efficiency,
       productivity: Math.min(100, Math.round((dayCompleted / Math.max(1, departmentMembers.length)) * 20)),
-      engagement: Math.round((activeMembers / Math.max(1, totalMembers)) * 100)
+      engagement: Math.round((adjustedActiveMembers / Math.max(1, adjustedTotalMembers)) * 100)
     };
   });
 
@@ -256,7 +320,7 @@ export default function HODAnalytics() {
     },
     {
       title: 'Active Members',
-      value: `${activeMembers}/${totalMembers}`,
+      value: `${adjustedActiveMembers}/${adjustedTotalMembers}`,
       description: 'Team availability',
       icon: Users,
       color: 'text-purple-600',
@@ -321,7 +385,7 @@ export default function HODAnalytics() {
           <h1 className="text-3xl font-bold tracking-tight">Department Analytics</h1>
           <p className="text-muted-foreground">
             Performance insights for {userDepartment?.name || 'your'} department
-            {analyticsResponse && (
+            {(analyticsResponse?.summary || analyticsResponse?.charts) && (
               <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
                 Live Data
               </span>
@@ -340,7 +404,7 @@ export default function HODAnalytics() {
               <SelectItem value="all">All time</SelectItem>
             </SelectContent>
           </Select>
-          
+
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder="Status" />
@@ -353,15 +417,17 @@ export default function HODAnalytics() {
               <SelectItem value="blocked">Blocked</SelectItem>
             </SelectContent>
           </Select>
-          
+
           <Button variant="outline" size="sm">
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Badge variant="outline" className="px-3 py-1">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Live Data
-          </Badge>
+          {(analyticsResponse?.summary || analyticsResponse?.charts) && (
+            <Badge variant="outline" className="px-3 py-1">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Live Data
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -464,17 +530,17 @@ export default function HODAnalytics() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="created" 
-                  stroke={COLORS.primary} 
+                <Line
+                  type="monotone"
+                  dataKey="created"
+                  stroke={COLORS.primary}
                   strokeWidth={2}
                   name="Created"
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="completed" 
-                  stroke={COLORS.success} 
+                <Line
+                  type="monotone"
+                  dataKey="completed"
+                  stroke={COLORS.success}
                   strokeWidth={2}
                   name="Completed"
                 />
@@ -530,16 +596,16 @@ export default function HODAnalytics() {
             <AreaChart data={performanceData}>
               <defs>
                 <linearGradient id="colorEfficiency" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0.1} />
                 </linearGradient>
                 <linearGradient id="colorProductivity" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={COLORS.success} stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor={COLORS.success} stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor={COLORS.success} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={COLORS.success} stopOpacity={0.1} />
                 </linearGradient>
                 <linearGradient id="colorEngagement" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={COLORS.warning} stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor={COLORS.warning} stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor={COLORS.warning} stopOpacity={0.8} />
+                  <stop offset="95%" stopColor={COLORS.warning} stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" />
@@ -597,7 +663,7 @@ export default function HODAnalytics() {
                 {completionRate}% task completion rate shows {analyticsResponse?.insights?.completionRate?.status || (completionRate >= 80 ? 'excellent' : completionRate >= 60 ? 'good' : 'needs improvement')} performance.
               </p>
             </div>
-            
+
             <div className="bg-white/50 dark:bg-gray-900/50 p-4 rounded-lg border">
               <div className="flex items-center gap-2 mb-2">
                 <Users className="h-4 w-4 text-blue-600" />
@@ -606,10 +672,10 @@ export default function HODAnalytics() {
                 </span>
               </div>
               <p className="text-sm text-blue-700 dark:text-blue-300">
-                {analyticsResponse?.insights?.teamEngagement?.message || `${Math.round((activeMembers / totalMembers) * 100)}% of team members are actively engaged in current projects.`}
+                {analyticsResponse?.insights?.teamEngagement?.message || `${Math.round((adjustedActiveMembers / Math.max(1, adjustedTotalMembers)) * 100)}% of team members are actively engaged in current projects.`}
               </p>
             </div>
-            
+
             <div className="bg-white/50 dark:bg-gray-900/50 p-4 rounded-lg border">
               <div className="flex items-center gap-2 mb-2">
                 <Timer className="h-4 w-4 text-orange-600" />
@@ -621,7 +687,7 @@ export default function HODAnalytics() {
                 Average of {avgTasksPerMember} tasks per member indicates {analyticsResponse?.insights?.taskLoad?.status || (avgTasksPerMember <= 3 ? 'optimal' : avgTasksPerMember <= 5 ? 'moderate' : 'high')} workload distribution.
               </p>
             </div>
-            
+
             <div className="bg-white/50 dark:bg-gray-900/50 p-4 rounded-lg border">
               <div className="flex items-center gap-2 mb-2">
                 <Zap className="h-4 w-4 text-red-600" />
@@ -630,7 +696,7 @@ export default function HODAnalytics() {
                 </span>
               </div>
               <p className="text-sm text-red-700 dark:text-red-300">
-                {analyticsResponse?.insights?.priorityFocus?.message || `${urgentTasks + (summary?.urgentTasks || 0)} high-priority tasks need immediate attention.`}
+                {analyticsResponse?.insights?.priorityFocus?.message || `${urgentTasks} high-priority tasks need immediate attention.`}
               </p>
             </div>
           </div>
@@ -639,4 +705,3 @@ export default function HODAnalytics() {
     </div>
   );
 }
-

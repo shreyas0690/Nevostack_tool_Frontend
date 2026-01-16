@@ -243,9 +243,9 @@ export const useHODManagement = (departmentId?: string) => {
     userData: {
       name: string;
       email: string;
-      role: 'manager' | 'member';
+      role?: 'manager' | 'member';
       managerId?: string;
-      isActive: boolean;
+      isActive?: boolean;
     }
   ) => {
     setState(prev => ({ ...prev, isSubmitting: true, userError: null }));
@@ -580,4 +580,3 @@ export const useHODManagement = (departmentId?: string) => {
 };
 
 export default useHODManagement;
-

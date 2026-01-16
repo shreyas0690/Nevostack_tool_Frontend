@@ -28,8 +28,9 @@ export default function DepartmentHierarchy({ department, users }: DepartmentHie
       return (department.managerIds || []).map(id => getUser(id)).filter(Boolean) as User[];
     }
     return users.filter((u: any) => {
-      if (!(u.role === 'manager' || u.role === 'department_head')) return false;
+      if (u.role !== 'manager') return false; // only managers, never treat head as manager
       const uDeptId = String(u.departmentId || (u.department && (u.department._id || u.department.id)) || '');
+      if (u.id && department.headId && String(u.id) === String(department.headId)) return false;
       return uDeptId === String(department.id);
     });
   })();
@@ -50,6 +51,8 @@ export default function DepartmentHierarchy({ department, users }: DepartmentHie
     member && member.id !== department.headId && 
     !(department.managerIds || []).includes(member.id)
   );
+
+  const isEmptyDepartment = !head && managers.length === 0 && regularMembers.length === 0;
 
   const UserCard = ({ user, role }: { user: User; role: 'head' | 'manager' | 'member' }) => {
     const getRoleStyles = () => {
@@ -223,7 +226,7 @@ export default function DepartmentHierarchy({ department, users }: DepartmentHie
           </div>
         )}
 
-        {members.length === 0 && (
+        {isEmptyDepartment && (
           <div className="text-center py-12 bg-gradient-to-r from-red-50 to-red-100/50 dark:from-red-900/20 dark:to-red-800/10 rounded-xl border border-red-200 dark:border-red-800">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
               <Users className="w-8 h-8 text-red-600 dark:text-red-400" />

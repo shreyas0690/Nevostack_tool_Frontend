@@ -19,7 +19,8 @@ import {
   Shield,
   Building2,
   Menu,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import SimpleNotificationBell from '@/components/SimpleNotificationBell';
 import { useAuth } from '@/components/Auth/AuthProvider';
@@ -62,7 +63,7 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
     if (currentUser?.role === 'super_admin' && currentUser?.email === 'admin@demo.com') {
       return getSystemBranding();
     }
-    
+
     // For regular workspace users, use actual company data
     if (companyData && companyData.name) {
       return {
@@ -73,7 +74,7 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
         systemName: `${companyData.name} Management System`
       };
     }
-    
+
     // Fallback to SaaS branding if no company data
     return getSystemBranding();
   };
@@ -81,7 +82,7 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
   const branding = getDisplayBranding();
 
   // Find user's department
-  const userDepartment = currentUser?.departmentId ? 
+  const userDepartment = currentUser?.departmentId ?
     mockDepartments.find(d => d.id === currentUser.departmentId) : null;
 
 
@@ -120,9 +121,9 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
         {/* Brand */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-lg overflow-hidden shadow-sm flex-shrink-0">
-            <img 
-              src="/nevolog.png" 
-              alt="NevoStack Logo" 
+            <img
+              src="/nevolog.png"
+              alt="NevoStack Logo"
               className="w-full h-full object-contain"
             />
           </div>
@@ -154,15 +155,15 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
         <div className="flex items-center gap-1 sm:gap-2">
           {/* Notifications */}
           <div className="relative">
-          <SimpleNotificationBell />
+            <SimpleNotificationBell />
           </div>
-          
+
           {/* Help & Support */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-9 w-9 p-0 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:scale-105 transition-all duration-200"
                 title="Help & Support"
               >
@@ -175,8 +176,8 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                 <p className="text-sm text-gray-600 dark:text-gray-400">Get help with {branding.shortName}</p>
               </div>
               <div className="p-2">
-              <DropdownMenuGroup>
-                  <DropdownMenuItem 
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
                     onClick={() => window.open('https://nevostack.com/docs/admin', '_blank')}
                     className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                   >
@@ -188,9 +189,9 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                       <div className="text-xs text-gray-500 dark:text-gray-400">Admin guides and tutorials</div>
                     </div>
                     <ExternalLink className="h-4 w-4 text-gray-400" />
-                </DropdownMenuItem>
-                  
-                  <DropdownMenuItem 
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
                     onClick={() => window.open('https://nevostack.com/support', '_blank')}
                     className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                   >
@@ -202,9 +203,9 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                       <div className="text-xs text-gray-500 dark:text-gray-400">Get technical support</div>
                     </div>
                     <ExternalLink className="h-4 w-4 text-gray-400" />
-                </DropdownMenuItem>
-                  
-                  <DropdownMenuItem 
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
                     onClick={() => window.open('mailto:support@nevostack.com?subject=Admin%20Support%20Request', '_blank')}
                     className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                   >
@@ -215,8 +216,8 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                       <div className="font-medium text-gray-900 dark:text-white">Contact Support</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">Send us a message</div>
                     </div>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -224,9 +225,9 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
           {/* Theme Toggle */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-9 w-9 p-0 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:scale-105 transition-all duration-200"
                 title="Theme Settings"
               >
@@ -241,29 +242,49 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                 <p className="text-sm text-gray-600 dark:text-gray-400">Choose your preferred theme</p>
               </div>
               <div className="p-2">
-              <DropdownMenuRadioGroup value={theme as string} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
-                  <DropdownMenuRadioItem value="light" className="flex items-center gap-3 p-2 rounded-lg">
-                    <Sun className="h-4 w-4 text-yellow-500" />
-                    <div>
-                      <div className="font-medium">Light</div>
+                <DropdownMenuRadioGroup value={theme as string} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
+                  <DropdownMenuRadioItem
+                    value="light"
+                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors mb-1
+                      ${theme === 'light' ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent'}
+                    `}
+                  >
+                    <Sun className={`h-4 w-4 ${theme === 'light' ? 'text-purple-600 dark:text-purple-400' : 'text-yellow-500'}`} />
+                    <div className="flex-1">
+                      <div className={`font-medium ${theme === 'light' ? 'text-purple-900 dark:text-purple-100' : ''}`}>Light</div>
                       <div className="text-xs text-gray-500">Clean and bright</div>
                     </div>
+                    {theme === 'light' && <Check className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark" className="flex items-center gap-3 p-2 rounded-lg">
-                    <Moon className="h-4 w-4 text-blue-500" />
-                    <div>
-                      <div className="font-medium">Dark</div>
+
+                  <DropdownMenuRadioItem
+                    value="dark"
+                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors mb-1
+                      ${theme === 'dark' ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent'}
+                    `}
+                  >
+                    <Moon className={`h-4 w-4 ${theme === 'dark' ? 'text-purple-600 dark:text-purple-400' : 'text-blue-500'}`} />
+                    <div className="flex-1">
+                      <div className={`font-medium ${theme === 'dark' ? 'text-purple-900 dark:text-purple-100' : ''}`}>Dark</div>
                       <div className="text-xs text-gray-500">Easy on the eyes</div>
                     </div>
+                    {theme === 'dark' && <Check className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system" className="flex items-center gap-3 p-2 rounded-lg">
-                    <div className="w-4 h-4 rounded-full bg-gradient-to-r from-yellow-400 to-blue-500"></div>
-                    <div>
-                      <div className="font-medium">System</div>
+
+                  <DropdownMenuRadioItem
+                    value="system"
+                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors
+                      ${theme === 'system' ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent'}
+                    `}
+                  >
+                    <div className={`w-4 h-4 rounded-full bg-gradient-to-r from-yellow-400 to-blue-500 ${theme === 'system' ? 'ring-2 ring-purple-600 dark:ring-purple-400 ring-offset-2 dark:ring-offset-gray-900' : ''}`}></div>
+                    <div className="flex-1">
+                      <div className={`font-medium ${theme === 'system' ? 'text-purple-900 dark:text-purple-100' : ''}`}>System</div>
                       <div className="text-xs text-gray-500">Follow system preference</div>
                     </div>
+                    {theme === 'system' && <Check className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
                   </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
+                </DropdownMenuRadioGroup>
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -291,14 +312,14 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="p-0 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200">
                   <Avatar className="w-10 h-10 border-2 border-gray-200 dark:border-gray-600">
-                  {currentUser?.avatar ? (
-                    <AvatarImage src={currentUser.avatar} alt={currentUser?.name} />
-                  ) : (
+                    {currentUser?.avatar ? (
+                      <AvatarImage src={currentUser.avatar} alt={currentUser?.name} />
+                    ) : (
                       <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
-                      {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('') : 'A'}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
+                        {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('') : 'A'}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80 p-0">
@@ -339,8 +360,8 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
 
                 {/* Menu Items */}
                 <div className="p-2">
-                <DropdownMenuGroup>
-                    <DropdownMenuItem 
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
                       onClick={() => onTabChange?.('settings')}
                       className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     >
@@ -352,8 +373,8 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                         <div className="text-xs text-gray-500 dark:text-gray-400">View and edit profile</div>
                       </div>
                     </DropdownMenuItem>
-                    
-                    <DropdownMenuItem 
+
+                    <DropdownMenuItem
                       onClick={() => onTabChange?.('settings')}
                       className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     >
@@ -364,12 +385,12 @@ export default function Header({ onTabChange, onMenuToggle, isMobile = false }: 
                         <div className="font-medium text-gray-900 dark:text-white">Preferences</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">Settings and preferences</div>
                       </div>
-                  </DropdownMenuItem>
+                    </DropdownMenuItem>
                   </DropdownMenuGroup>
-                  
+
                   <DropdownMenuSeparator className="my-2" />
-                  
-                  <DropdownMenuItem 
+
+                  <DropdownMenuItem
                     onClick={logout}
                     className="flex items-center gap-3 p-3 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-red-600 dark:text-red-400"
                   >

@@ -516,6 +516,13 @@ export default function SaaSAuditLogs() {
     fetchSecurityAlerts();
   }, []);
 
+  // Refetch when filters/search change to use server-side filtering
+  useEffect(() => {
+    // Reset to first page when filters change
+    setCurrentPage(1);
+    fetchAuditLogs(1);
+  }, [searchTerm, categoryFilter, severityFilter, companyFilter]);
+
   // Real-time updates
   useEffect(() => {
     if (realTimeMode) {
@@ -1658,4 +1665,3 @@ export default function SaaSAuditLogs() {
     </div>
   );
 }
-

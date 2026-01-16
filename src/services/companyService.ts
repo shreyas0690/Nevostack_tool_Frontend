@@ -1,4 +1,5 @@
 import { apiService } from './apiService';
+import { authService } from './authService';
 import { API_CONFIG } from '@/config/api';
 
 export interface Company {
@@ -94,6 +95,10 @@ export interface UpdateCompanyData {
 }
 
 class CompanyService {
+  private canUseMockData(): boolean {
+    return !authService.getAccessToken() && !authService.getRefreshToken();
+  }
+
   // Get company by ID
   async getCompanyById(id: string) {
     try {
@@ -110,9 +115,13 @@ class CompanyService {
       // Fallback to direct data if response format is different
       return { data: response };
     } catch (error) {
-      console.warn('Company API not available, using mock data:', error.message);
-      // Return mock data when API is not available
-      return this.getMockCompanyData(id);
+      if (this.canUseMockData()) {
+        console.warn('Company API not available, using mock data:', (error as Error)?.message || error);
+        return this.getMockCompanyData(id);
+      }
+
+      console.error('Company API error:', (error as Error)?.message || error);
+      throw error;
     }
   }
 
@@ -214,8 +223,10 @@ class CompanyService {
       return { data: response };
     } catch (error) {
       console.error('Update company error:', error);
-      // Return mock updated data when API is not available
-      return this.getMockUpdatedCompanyData(id, companyData);
+      if (this.canUseMockData()) {
+        return this.getMockUpdatedCompanyData(id, companyData);
+      }
+      throw error;
     }
   }
 
@@ -261,11 +272,13 @@ class CompanyService {
       return data;
     } catch (error) {
       console.error('Upload logo error:', error);
-      // Return mock URL for development
-      return {
-        success: true,
-        logoUrl: 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=100&h=100&fit=crop'
-      };
+      if (this.canUseMockData()) {
+        return {
+          success: true,
+          logoUrl: 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=100&h=100&fit=crop'
+        };
+      }
+      throw error;
     }
   }
 

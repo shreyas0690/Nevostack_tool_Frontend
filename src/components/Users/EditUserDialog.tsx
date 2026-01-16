@@ -33,6 +33,7 @@ import { departmentService } from '@/services/departmentService';
 import { userService } from '@/services/userService';
 import { useQuery } from '@tanstack/react-query';
 import { Phone, UserIcon, Mail, Shield, Building2, Users, CheckCircle, Loader2, Edit } from 'lucide-react';
+import { toUiRole } from '@/utils/roleMap';
 
 const formSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -80,7 +81,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
         lastName: user.lastName || (user.name ? user.name.split(' ').slice(1).join(' ') : ''),
         email: user.email,
         mobileNumber: user.mobileNumber || '',
-        role: user.role,
+        role: (toUiRole(user.role) || user.role) as FormData['role'],
         departmentId: user.departmentId || 'none',
         hodId: (user as any).hodId || 'none',
         managerId: user.managerId || 'none',
@@ -104,16 +105,20 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
       const normalizedHod = (data as any).hodId && (data as any).hodId !== 'none' ? (data as any).hodId : undefined;
 
       // HOD Change Logic - Special handling for HOD changes
-      const isHodChange = user.role === 'department_head' && data.role !== 'department_head';
-      const isNewHodAssignment = data.role === 'department_head' && user.role !== 'department_head';
-      const isHodToHodChange = user.role === 'department_head' && data.role === 'department_head' && 
-                               user.id !== (data as any).newHodId;
+      const currentUserRole = toUiRole(user.role);
+      const isHodChange = currentUserRole === 'department_head' && data.role !== 'department_head';
+      const isNewHodAssignment = data.role === 'department_head' && currentUserRole !== 'department_head';
+      const currentUserDeptId = user.departmentId ? String(user.departmentId) : '';
+      const isHodToHodChange = currentUserRole === 'department_head' &&
+        data.role === 'department_head' &&
+        !!normalizedDept &&
+        String(normalizedDept) !== currentUserDeptId;
 
       console.log('HOD Change Detection:', {
         isHodChange,
         isNewHodAssignment,
         isHodToHodChange,
-        currentRole: user.role,
+        currentRole: currentUserRole || user.role,
         newRole: data.role
       });
 
@@ -177,7 +182,8 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
   const selectedHodId = form.watch('hodId');
 
   // HOD Change Detection
-  const isCurrentHod = user?.role === 'department_head';
+  const currentUserRoleForUi = toUiRole(user?.role);
+  const isCurrentHod = currentUserRoleForUi === 'department_head';
   const isChangingToHod = selectedRole === 'department_head';
   const isHodChange = isCurrentHod && !isChangingToHod;
   const isNewHodAssignment = !isCurrentHod && isChangingToHod;
@@ -195,7 +201,12 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
     queryKey: ['users-all-edit'],
     queryFn: async () => {
       const res: any = await userService.getUsers({ limit: 1000 });
-      return (res && (res.data || res.users)) || [];
+      const list = (res && (res.data || res.users)) || [];
+      return list.map((u: any) => ({
+        ...u,
+        role: toUiRole(u?.role),
+        isActive: typeof u?.isActive === 'boolean' ? u.isActive : u?.status === 'active',
+      }));
     }
   });
 
@@ -255,7 +266,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
     u.role === 'department_head' &&
     u.isActive &&
     u.id !== user?.id &&
-    (!selectedDepartmentId || selectedDepartmentId === 'none' || String(u.departmentId || (u.department && (u.department._id || u.department.id))) === String(selectedDepartmentId))
+    (!selectedDepartmentId || selectedDepartmentId === 'none' || String(extractUserDepartmentId(u)) === String(selectedDepartmentId))
   );
 
   // Reset dependent fields when role changes
@@ -272,10 +283,8 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
   // Handle department selection
   const handleDepartmentChange = (departmentId: string) => {
     form.setValue('departmentId', departmentId);
-    // reset manager when department changes (for members)
-    if (String(form.getValues().role) === 'member') {
-      form.setValue('managerId', '');
-    }
+    form.setValue('hodId', 'none');
+    form.setValue('managerId', 'none');
   };
 
   if (!user) return null;
@@ -472,6 +481,8 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
                           <SelectItem value="member">👤 Member</SelectItem>
                           <SelectItem value="manager">👨‍💼 Manager</SelectItem>
                           <SelectItem value="department_head">🏢 Department Head</SelectItem>
+                          <SelectItem value="admin">🛡 Admin</SelectItem>
+                          <SelectItem value="super_admin">👑 Super Admin</SelectItem>
                           <SelectItem value="hr">👥 HR</SelectItem>
                           <SelectItem value="hr_manager">👨‍💼 HR Manager</SelectItem>
                           <SelectItem value="person">👤 Person</SelectItem>
@@ -525,7 +536,7 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
                           <Shield className="h-4 w-4" />
                           Department HOD
                         </FormLabel>
-                        <Select onValueChange={(v) => { field.onChange(v); form.setValue('managerId', v); console.log('manager selected in EditUserDialog:', v); }} value={field.value}>
+                        <Select onValueChange={(v) => { field.onChange(v); }} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400">
                               <SelectValue placeholder="Select HOD" />
@@ -546,7 +557,13 @@ export default function EditUserDialog({ open, onOpenChange, user, onUserUpdated
                   />
                 )}
 
-                {selectedRole !== 'super_admin' && selectedRole !== 'admin' && selectedRole !== 'person' && selectedRole !== 'manager' && selectedRole !== 'department_head' && (
+                {selectedRole !== 'super_admin' &&
+                  selectedRole !== 'admin' &&
+                  selectedRole !== 'person' &&
+                  selectedRole !== 'manager' &&
+                  selectedRole !== 'department_head' &&
+                  selectedRole !== 'hr' &&
+                  selectedRole !== 'hr_manager' && (
                   <FormField
                     control={form.control}
                     name="managerId"

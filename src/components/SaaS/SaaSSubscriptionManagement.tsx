@@ -116,16 +116,17 @@ interface CompanySubscription {
   companyId: string;
   companyName: string;
   plan: Plan;
+  planId?: string;
   status: 'active' | 'trial' | 'expired' | 'cancelled' | 'suspended';
   billingCycle: 'monthly' | 'quarterly' | 'yearly';
-  startDate: string;
-  endDate: string;
-  nextBillingDate: string;
+  startDate?: string;
+  endDate?: string | null;
+  nextBillingDate?: string | null;
   autoRenewal: boolean;
   currentPeriodRevenue: number;
   totalRevenue: number;
   paymentMethod: string;
-  lastPaymentDate: string;
+  lastPaymentDate?: string | null;
   usageStats: {
     users: number;
     departments: number;
@@ -453,6 +454,7 @@ export default function SaaSSubscriptionManagement() {
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [extendMonths, setExtendMonths] = useState<string>('1');
   const [newPlan, setNewPlan] = useState({
     name: '',
     displayName: '',
@@ -552,47 +554,75 @@ export default function SaaSSubscriptionManagement() {
             subscriptionBillingCycle: company.subscription?.billingCycle
           });
           
-          return {
-          _id: company._id,
-          companyId: company._id,
-          companyName: company.companyName,
-          plan: {
-            _id: company._id,
-            name: company.subscriptionPlan?.toLowerCase() || 'free',
-            displayName: company.subscriptionPlan || 'Free',
-            description: `${company.subscriptionPlan || 'Free'} Plan`,
+          const planName = (company.subscriptionPlan || company.subscription?.planName || company.subscription?.plan || 'Free')?.toString();
+          const normalizedPlanName = planName?.toLowerCase() || 'free';
+          const planIdFromCompany = company.subscription?.planId || company.subscriptionPlanId || null;
+          const matchedPlan = plans.find((plan: Plan) => 
+            plan._id === planIdFromCompany ||
+            plan.name.toLowerCase() === normalizedPlanName ||
+            plan.displayName.toLowerCase() === normalizedPlanName
+          );
+
+          const priceFromCompany = company.subscriptionAmount || company.subscription?.amount || matchedPlan?.price?.monthly || 0;
+          const resolvedPlan: Plan = matchedPlan ? { ...matchedPlan } : {
+            _id: planIdFromCompany || `plan-${normalizedPlanName}`,
+            name: normalizedPlanName,
+            displayName: planName || 'Free',
+            description: `${planName || 'Free'} Plan`,
             price: {
-              monthly: company.subscriptionAmount || 0,
-              quarterly: company.subscriptionAmount ? company.subscriptionAmount * 3 * 0.9 : 0,
-              yearly: company.subscriptionAmount ? company.subscriptionAmount * 12 * 0.8 : 0
+              monthly: priceFromCompany,
+              quarterly: priceFromCompany ? priceFromCompany * 3 * 0.9 : 0,
+              yearly: priceFromCompany ? priceFromCompany * 12 * 0.8 : 0
             },
             limits: company.planLimits || { 
               maxUsers: company.maxUsers || -1, 
               maxDepartments: -1, 
               storageGB: -1 
             },
-            features: {},
-            trialDays: 0,
+            features: matchedPlan?.features || {},
+            trialDays: matchedPlan?.trialDays || 0,
             isActive: true,
-            isPopular: false,
+            isPopular: matchedPlan?.isPopular || false,
             createdAt: company.createdAt
-          },
-          status: company.subscriptionStatus || 'trial',
-          billingCycle: company.billingCycle || company.subscription?.billingCycle || 'monthly',
-          startDate: company.subscriptionStartDate || company.createdAt,
-          endDate: company.subscriptionEndDate,
-          nextBillingDate: company.nextBillingDate,
-          autoRenewal: company.autoRenewal || false,
-          currentPeriodRevenue: company.subscriptionAmount || 0,
-          totalRevenue: company.totalPaid || 0,
-          paymentMethod: company.paymentMethod || 'N/A',
-          lastPaymentDate: company.lastPaymentDate,
-          usageStats: company.usageStats || {
-            users: company.currentUsers || 0,
-            departments: company.totalDepartments || 0,
-            storageUsed: company.storageUsed || 0
-          }
-        };
+          };
+
+          resolvedPlan.price = {
+            monthly: matchedPlan?.price?.monthly ?? priceFromCompany,
+            quarterly: matchedPlan?.price?.quarterly ?? (priceFromCompany ? priceFromCompany * 3 * 0.9 : 0),
+            yearly: matchedPlan?.price?.yearly ?? (priceFromCompany ? priceFromCompany * 12 * 0.8 : 0)
+          };
+
+          resolvedPlan.limits = matchedPlan?.limits || company.planLimits || { 
+            maxUsers: company.maxUsers || -1, 
+            maxDepartments: -1, 
+            storageGB: -1 
+          };
+
+          const billingCycle = company.billingCycle || company.subscription?.billingCycle || 'monthly';
+          const currentAmount = company.subscriptionAmount || company.subscription?.amount || resolvedPlan.price?.[billingCycle] || 0;
+
+          return {
+            _id: company._id,
+            companyId: company._id,
+            companyName: company.companyName,
+            plan: resolvedPlan,
+            planId: planIdFromCompany || resolvedPlan._id,
+            status: company.subscriptionStatus || company.subscription?.status || 'trial',
+            billingCycle,
+            startDate: company.subscriptionStartDate || company.subscription?.startDate || company.createdAt,
+            endDate: company.subscriptionEndDate || company.subscription?.endDate || company.subscription?.trialEndsAt,
+            nextBillingDate: company.nextBillingDate || company.subscription?.nextBillingDate,
+            autoRenewal: company.autoRenewal ?? company.subscription?.autoRenewal ?? false,
+            currentPeriodRevenue: currentAmount,
+            totalRevenue: company.totalPaid || company.billing?.totalPaid || 0,
+            paymentMethod: company.paymentMethod || company.subscription?.paymentMethod || 'N/A',
+            lastPaymentDate: company.lastPaymentDate || company.billing?.lastPaymentDate,
+            usageStats: company.usageStats || {
+              users: company.currentUsers || 0,
+              departments: company.totalDepartments || 0,
+              storageUsed: company.storageUsed || 0
+            }
+          };
         }) || [];
         
         setSubscriptions(subscriptionData);
@@ -679,7 +709,7 @@ export default function SaaSSubscriptionManagement() {
   const handlePaymentHistory = async (subscription: CompanySubscription) => {
     setSelectedSubscription(subscription);
     setShowPaymentHistoryDialog(true);
-    await fetchPaymentHistory(subscription._id);
+    await fetchPaymentHistory(subscription.companyId || subscription._id);
   };
 
 
@@ -1055,7 +1085,10 @@ export default function SaaSSubscriptionManagement() {
   };
 
   const executeExtend = async (months: number) => {
-    if (!selectedSubscription) return;
+    if (!selectedSubscription || !months) {
+      toast.error('Select a valid extension period');
+      return;
+    }
     
     setActionLoading(true);
     try {
@@ -1530,7 +1563,7 @@ export default function SaaSSubscriptionManagement() {
                     
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-gray-500">
-                        {subscription.status === 'trial' ? 'Trial ends' : 'Next billing'}: {new Date(subscription.nextBillingDate).toLocaleDateString()}
+                        {subscription.status === 'trial' ? 'Trial ends' : 'Next billing'}: {subscription.nextBillingDate ? new Date(subscription.nextBillingDate).toLocaleDateString() : 'N/A'}
                       </div>
                       <div className="flex items-center space-x-1">
                         <Button
@@ -1643,7 +1676,7 @@ export default function SaaSSubscriptionManagement() {
                               {subscription.companyName}
                             </div>
                             <div className="text-xs text-gray-500">
-                              Since {new Date(subscription.startDate).toLocaleDateString()}
+                              Since {subscription.startDate ? new Date(subscription.startDate).toLocaleDateString() : 'N/A'}
                             </div>
                           </div>
                         </div>
@@ -1733,7 +1766,7 @@ export default function SaaSSubscriptionManagement() {
                             {subscription.status === 'trial' ? 'Trial ends' : 'Next billing'}
                           </div>
                           <div className="text-xs text-gray-500">
-                            {new Date(subscription.nextBillingDate).toLocaleDateString()}
+                            {subscription.nextBillingDate ? new Date(subscription.nextBillingDate).toLocaleDateString() : 'N/A'}
                           </div>
                           <div className="text-xs">
                             {subscription.paymentMethod}
@@ -2879,11 +2912,16 @@ export default function SaaSSubscriptionManagement() {
                 onChange={(e) => setSelectedPlanId(e.target.value)}
               >
                 <option value="">Select a plan...</option>
-                {plans.filter(plan => plan._id !== selectedSubscription?.plan._id).map(plan => (
-                  <option key={plan._id} value={plan._id}>
-                    {plan.displayName} - ₹{plan.price.monthly}/month
-                  </option>
-                ))}
+                {plans
+                  .filter(plan => {
+                    const currentPlanName = selectedSubscription?.plan?.name?.toLowerCase() || selectedSubscription?.plan?.displayName?.toLowerCase();
+                    return currentPlanName ? (plan.name?.toLowerCase() !== currentPlanName && plan.displayName?.toLowerCase() !== currentPlanName) : true;
+                  })
+                  .map(plan => (
+                    <option key={plan._id} value={plan._id}>
+                      {plan.displayName} - ₹{plan.price.monthly}/month
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
@@ -2922,11 +2960,16 @@ export default function SaaSSubscriptionManagement() {
                 onChange={(e) => setSelectedPlanId(e.target.value)}
               >
                 <option value="">Select a plan...</option>
-                {plans.filter(plan => plan._id !== selectedSubscription?.plan._id).map(plan => (
-                  <option key={plan._id} value={plan._id}>
-                    {plan.displayName} - ₹{plan.price.monthly}/month
-                  </option>
-                ))}
+                {plans
+                  .filter(plan => {
+                    const currentPlanName = selectedSubscription?.plan?.name?.toLowerCase() || selectedSubscription?.plan?.displayName?.toLowerCase();
+                    return currentPlanName ? (plan.name?.toLowerCase() !== currentPlanName && plan.displayName?.toLowerCase() !== currentPlanName) : true;
+                  })
+                  .map(plan => (
+                    <option key={plan._id} value={plan._id}>
+                      {plan.displayName} - ₹{plan.price.monthly}/month
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
@@ -2957,27 +3000,31 @@ export default function SaaSSubscriptionManagement() {
             <div className="text-sm text-gray-600">
               Current Plan: <span className="font-medium">{selectedSubscription?.plan.displayName}</span>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Extend by (months)</label>
-              <select className="w-full p-2 border rounded-md">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Extend by (months)</label>
+              <select 
+                className="w-full p-2 border rounded-md"
+                value={extendMonths}
+                onChange={(e) => setExtendMonths(e.target.value)}
+              >
                 <option value="1">1 Month</option>
                 <option value="3">3 Months</option>
                 <option value="6">6 Months</option>
                 <option value="12">12 Months</option>
               </select>
+              </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowExtendDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => executeExtend(1)}
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Extending...' : 'Extend Subscription'}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowExtendDialog(false)}>
+                Cancel
+              </Button>
+              <Button 
+              onClick={() => executeExtend(Number(extendMonths))}
+              disabled={actionLoading || !extendMonths}
+              >
+                {actionLoading ? 'Extending...' : 'Extend Subscription'}
+              </Button>
+            </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -3212,7 +3259,7 @@ export default function SaaSSubscriptionManagement() {
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-600">Start Date</label>
-                        <p className="text-sm">{new Date(selectedSubscription.startDate).toLocaleDateString()}</p>
+                        <p className="text-sm">{selectedSubscription.startDate ? new Date(selectedSubscription.startDate).toLocaleDateString() : 'N/A'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-600">End Date</label>
@@ -3433,4 +3480,3 @@ export default function SaaSSubscriptionManagement() {
     </div>
   );
 }
-

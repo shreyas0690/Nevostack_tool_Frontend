@@ -6,9 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { 
-  Download, FileText, Calendar as CalendarIcon, Filter, 
-  BarChart3, Users, ClipboardList, CalendarDays, Building2, 
+import {
+  Download, FileText, Calendar as CalendarIcon, Filter,
+  BarChart3, Users, ClipboardList, CalendarDays, Building2,
   TrendingUp, FileSpreadsheet, FileImage
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,10 +28,16 @@ export default function HRReports() {
   const [reportData, setReportData] = useState<OverviewReport | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Load report data when component mounts or parameters change
+  // New state for explicit date range
+  const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
+    start: startOfMonth(new Date()),
+    end: endOfMonth(new Date())
+  });
+
+  // Load report data when date range changes
   useEffect(() => {
     generateReportData();
-  }, [selectedDate, reportType]);
+  }, [dateRange]);
 
   const reportCategories = [
     { id: 'overview', label: 'HR Overview Report', icon: BarChart3, description: 'Complete HR overview with all metrics' },
@@ -70,9 +76,8 @@ export default function HRReports() {
   const generateReportData = async () => {
     try {
       setIsLoadingData(true);
-      const range = reportType === 'weekly'
-        ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
-        : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+      // Use the explicit dateRange state
+      const range = dateRange;
 
       const data = await reportsService.generateOverviewReport(
         reportType,
@@ -173,9 +178,8 @@ export default function HRReports() {
   const downloadReport = async (fileFormat: 'json' | 'csv' | 'pdf') => {
     setIsGenerating(true);
     try {
-      const range = reportType === 'weekly'
-        ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
-        : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+      // Use the explicit dateRange state
+      const range = dateRange;
 
       await reportsService.downloadReport({
         reportType,
@@ -204,6 +208,7 @@ export default function HRReports() {
   const setQuickDate = (option: string) => {
     const range = getDateRange(option);
     setSelectedDate(range.start);
+    setDateRange(range);
     const optionConfig = quickDateOptions.find(opt => opt.value === option);
     if (optionConfig) {
       setReportType(optionConfig.type);
@@ -236,12 +241,12 @@ export default function HRReports() {
             {reportCategories.map((category) => {
               const Icon = category.icon;
               return (
-                <Card 
-                  key={category.id} 
+                <Card
+                  key={category.id}
                   className={cn(
                     "cursor-pointer transition-all hover:shadow-md",
-                    reportCategory === category.id 
-                      ? "ring-2 ring-primary border-primary" 
+                    reportCategory === category.id
+                      ? "ring-2 ring-primary border-primary"
                       : "hover:border-primary/50"
                   )}
                   onClick={() => setReportCategory(category.id)}
@@ -266,7 +271,16 @@ export default function HRReports() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Report Period</label>
-              <Select value={reportType} onValueChange={(value: 'weekly' | 'monthly') => setReportType(value)}>
+              <Select
+                value={reportType}
+                onValueChange={(value: 'weekly' | 'monthly') => {
+                  setReportType(value);
+                  const range = value === 'weekly'
+                    ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
+                    : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+                  setDateRange(range);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -296,7 +310,15 @@ export default function HRReports() {
                   <Calendar
                     mode="single"
                     selected={selectedDate}
-                    onSelect={(date) => date && setSelectedDate(date)}
+                    onSelect={(date) => {
+                      if (date) {
+                        setSelectedDate(date);
+                        const range = reportType === 'weekly'
+                          ? { start: startOfWeek(date), end: endOfWeek(date) }
+                          : { start: startOfMonth(date), end: endOfMonth(date) };
+                        setDateRange(range);
+                      }
+                    }}
                     initialFocus
                   />
                 </PopoverContent>
@@ -341,7 +363,7 @@ export default function HRReports() {
 
             <TabsContent value="summary" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Card>
+                <Card>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -500,10 +522,10 @@ export default function HRReports() {
                   <div className="space-y-4">
                     {mockUsers.slice(0, 5).map((user) => {
                       const userTasks = mockTasks.filter(t => t.assignedTo === user.id);
-                      const completionRate = userTasks.length > 0 
+                      const completionRate = userTasks.length > 0
                         ? Math.round((userTasks.filter(t => t.status === 'completed').length / userTasks.length) * 100)
                         : 0;
-                      
+
                       return (
                         <div key={user.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                           <div>
@@ -533,10 +555,10 @@ export default function HRReports() {
                   <div className="space-y-4">
                     {mockDepartments.map((dept) => {
                       const deptTasks = mockTasks.filter(t => t.departmentId === dept.id);
-                      const completionRate = deptTasks.length > 0 
+                      const completionRate = deptTasks.length > 0
                         ? Math.round((deptTasks.filter(t => t.status === 'completed').length / deptTasks.length) * 100)
                         : 0;
-                      
+
                       return (
                         <div key={dept.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                           <div>
@@ -568,7 +590,7 @@ export default function HRReports() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Button 
+            <Button
               onClick={() => downloadReport('json')}
               disabled={isGenerating}
               className="flex items-center gap-2"
@@ -576,7 +598,7 @@ export default function HRReports() {
               <FileText className="h-4 w-4" />
               Download JSON
             </Button>
-            <Button 
+            <Button
               onClick={() => downloadReport('csv')}
               disabled={isGenerating}
               variant="outline"
@@ -585,7 +607,7 @@ export default function HRReports() {
               <FileSpreadsheet className="h-4 w-4" />
               Download CSV
             </Button>
-            <Button 
+            <Button
               onClick={() => downloadReport('pdf')}
               disabled={isGenerating}
               variant="outline"
@@ -595,7 +617,7 @@ export default function HRReports() {
               Download PDF
             </Button>
           </div>
-          
+
           {isGenerating && (
             <div className="mt-4 p-4 bg-muted rounded-lg">
               <div className="flex items-center gap-2">

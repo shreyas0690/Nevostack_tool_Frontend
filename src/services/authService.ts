@@ -72,6 +72,7 @@ class AuthService {
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('device');
     localStorage.removeItem('deviceId');
+    localStorage.removeItem('nevostack_device_id');
 
     try {
       const deviceInfo = this.getDeviceInfo();
@@ -111,6 +112,10 @@ class AuthService {
       console.log('Storing user data during login:', data.user, 'Avatar:', data.user.avatar);
       localStorage.setItem('user', JSON.stringify(data.user));
       localStorage.setItem('device', JSON.stringify(data.device));
+      if (data.device?.deviceId) {
+        localStorage.setItem('deviceId', data.device.deviceId);
+        localStorage.setItem('nevostack_device_id', data.device.deviceId);
+      }
 
       console.log('✅ authService.login successful, returning data');
       return data;
@@ -126,6 +131,7 @@ class AuthService {
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('device');
       localStorage.removeItem('deviceId');
+      localStorage.removeItem('nevostack_device_id');
 
       // Re-throw the error - NO FALLBACK TO MOCK DATA
       throw error;
@@ -136,7 +142,7 @@ class AuthService {
   private async tryRealLogin(credentials: LoginCredentials): Promise<LoginResponse | null> {
     try {
       const deviceInfo = this.getDeviceInfo();
-      
+
       const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.LOGIN}`, {
         method: 'POST',
         headers: {
@@ -165,10 +171,10 @@ class AuthService {
   // Logout user
   async logout(logoutAll: boolean = false): Promise<void> {
     try {
-      const deviceId = localStorage.getItem('deviceId');
+      const deviceId = localStorage.getItem('deviceId') || localStorage.getItem('nevostack_device_id');
       const device = localStorage.getItem('device');
       let currentDeviceId = deviceId;
-      
+
       // Try to get device ID from stored device info if not in localStorage
       if (!currentDeviceId && device) {
         try {
@@ -184,7 +190,7 @@ class AuthService {
         deviceId: currentDeviceId,
         hasAccessToken: !!this.getAccessToken()
       });
-      
+
       await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.LOGOUT}`, {
         method: 'POST',
         headers: {
@@ -199,6 +205,7 @@ class AuthService {
       localStorage.removeItem('user');
       localStorage.removeItem('device');
       localStorage.removeItem('deviceId');
+      localStorage.removeItem('nevostack_device_id');
     } catch (error) {
       console.error('Logout error:', error);
       // Clear tokens even if API call fails
@@ -206,70 +213,85 @@ class AuthService {
     }
   }
 
+  // Refresh promise to handle concurrent refresh requests
+  private refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+
   // Refresh access token
   async refreshToken(): Promise<{ accessToken: string; refreshToken: string }> {
-    try {
-      const refreshToken = this.getRefreshToken();
-      
-      if (!refreshToken) {
-        throw new Error('No refresh token available');
-      }
-
-      const deviceId = localStorage.getItem('deviceId');
-      const device = localStorage.getItem('device');
-      let currentDeviceId = deviceId;
-      
-      // Try to get device ID from stored device info if not in localStorage
-      if (!currentDeviceId && device) {
-        try {
-          const deviceData = JSON.parse(device);
-          currentDeviceId = deviceData.deviceId;
-        } catch (e) {
-          console.warn('Failed to parse device data:', e);
-        }
-      }
-
-      console.log('Refreshing token with:', {
-        hasRefreshToken: !!refreshToken,
-        deviceId: currentDeviceId,
-        endpoint: `${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.REFRESH}`
-      });
-
-      const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.REFRESH}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          refreshToken,
-          deviceId: currentDeviceId
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Token refresh failed');
-      }
-
-      // Update tokens
-      this.setTokens(data.tokens);
-
-      return data.tokens;
-    } catch (error) {
-      console.error('Token refresh error:', error);
-      // Clear tokens but don't reload page - let auth provider handle logout
-      this.clearTokens();
-      localStorage.removeItem('user');
-      localStorage.removeItem('device');
-      localStorage.removeItem('deviceId');
-      localStorage.removeItem('nevostack_auth');
-      localStorage.removeItem('nevostack_user');
-      
-      // Instead of reloading page, just throw error so AuthProvider can handle
-      console.log('🔄 Refresh token failed - AuthProvider will handle logout');
-      throw error;
+    if (this.refreshPromise) {
+      console.log('🔄 Token refresh already in progress, reusing promise');
+      return this.refreshPromise;
     }
+
+    this.refreshPromise = (async () => {
+      try {
+        const refreshToken = this.getRefreshToken();
+
+        if (!refreshToken) {
+          throw new Error('No refresh token available');
+        }
+
+        const deviceId = localStorage.getItem('deviceId') || localStorage.getItem('nevostack_device_id');
+        const device = localStorage.getItem('device');
+        let currentDeviceId = deviceId;
+
+        // Try to get device ID from stored device info if not in localStorage
+        if (!currentDeviceId && device) {
+          try {
+            const deviceData = JSON.parse(device);
+            currentDeviceId = deviceData.deviceId;
+          } catch (e) {
+            console.warn('Failed to parse device data:', e);
+          }
+        }
+
+        console.log('Refreshing token with:', {
+          hasRefreshToken: !!refreshToken,
+          deviceId: currentDeviceId,
+          endpoint: `${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.REFRESH}`
+        });
+
+        const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.AUTH.REFRESH}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            refreshToken,
+            deviceId: currentDeviceId
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Token refresh failed');
+        }
+
+        // Update tokens
+        this.setTokens(data.tokens);
+
+        return data.tokens;
+      } catch (error) {
+        console.error('Token refresh error:', error);
+        // Clear tokens but don't reload page - let auth provider handle logout
+        this.clearTokens();
+        localStorage.removeItem('user');
+        localStorage.removeItem('device');
+        localStorage.removeItem('deviceId');
+        localStorage.removeItem('nevostack_device_id');
+        localStorage.removeItem('nevostack_auth');
+        localStorage.removeItem('nevostack_user');
+
+        // Instead of reloading page, just throw error so AuthProvider can handle
+        console.log('🔄 Refresh token failed - AuthProvider will handle logout');
+        throw error;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
   }
 
   // Get user devices
@@ -493,12 +515,22 @@ class AuthService {
   private setTokens(tokens: { accessToken: string; refreshToken: string }): void {
     localStorage.setItem('accessToken', tokens.accessToken);
     localStorage.setItem('refreshToken', tokens.refreshToken);
+    try {
+      localStorage.setItem('nevostack_tokens', JSON.stringify({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: Date.now() + (15 * 60 * 1000)
+      }));
+    } catch (error) {
+      console.error('Error storing legacy tokens:', error);
+    }
   }
 
   // Clear tokens
   private clearTokens(): void {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('nevostack_tokens');
   }
 
   // Get device information
@@ -520,7 +552,7 @@ class AuthService {
   // Create authenticated fetch wrapper
   async authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const token = this.getAccessToken();
-    
+
     if (!token) {
       throw new Error('No access token available');
     }
@@ -538,7 +570,7 @@ class AuthService {
       try {
         await this.refreshToken();
         const newToken = this.getAccessToken();
-        
+
         return fetch(url, {
           ...options,
           headers: {
@@ -566,6 +598,3 @@ class AuthService {
 // Create singleton instance
 export const authService = new AuthService();
 export default authService;
-
-
-

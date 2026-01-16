@@ -29,14 +29,29 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { 
   UserPlus, Search, Filter, Edit, Trash2, Mail, Building2, 
   Users, CheckCircle, XCircle, Crown, Shield, User as UserIcon, Key, Phone,
-  Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
+  Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, MoreVertical, ArrowLeftRight, Loader2
 } from 'lucide-react';
 import { mockDepartments } from '@/data/mockData';
 import { User, UserRole } from '@/types/company';
+import { toUiRole } from '@/utils/roleMap';
 import toast from 'react-hot-toast';
 import { userService } from '@/services/userService';
 import { departmentService } from '@/services/departmentService';
@@ -64,6 +79,19 @@ export default function UserManagement() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [exchangeDialogOpen, setExchangeDialogOpen] = useState(false);
+  const [exchangeSourceUser, setExchangeSourceUser] = useState<User | null>(null);
+  const [exchangeTargetHodId, setExchangeTargetHodId] = useState('');
+  const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
+  const [exchangeManagerDialogOpen, setExchangeManagerDialogOpen] = useState(false);
+  const [exchangeManagerSourceUser, setExchangeManagerSourceUser] = useState<User | null>(null);
+  const [exchangeManagerTargetId, setExchangeManagerTargetId] = useState('');
+  const [exchangeManagerSubmitting, setExchangeManagerSubmitting] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferUser, setTransferUser] = useState<User | null>(null);
+  const [transferDeptId, setTransferDeptId] = useState('');
+  const [transferManagerId, setTransferManagerId] = useState('');
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -122,6 +150,7 @@ export default function UserManagement() {
       return list.map((u: any) => {
         const firstName = u.firstName || (u.name ? u.name.split(' ')[0] : '');
         const lastName = u.lastName || (u.name ? u.name.split(' ').slice(1).join(' ') : '');
+        const role = (toUiRole(u.role) || u.role) as UserRole;
 
         // Backend may return a populated `department` object or a `departmentId` string.
         const deptObj = u.department;
@@ -136,6 +165,7 @@ export default function UserManagement() {
           ...u,
           firstName,
           lastName,
+          role,
           departmentId,
           departmentName,
           isActive
@@ -145,7 +175,7 @@ export default function UserManagement() {
   });
 
   // Fetch departments for filter dropdown
-  const { data: departments = [] } = useQuery({
+  const { data: departments = [], refetch: refetchDepartments } = useQuery({
     queryKey: ['departments'],
     queryFn: async () => {
       try {
@@ -283,6 +313,118 @@ export default function UserManagement() {
     toast.success(`Password has been updated for ${userName}.`);
   };
 
+  const openExchangeDialog = (user: User) => {
+    setExchangeSourceUser(user);
+    setExchangeTargetHodId('');
+    setExchangeDialogOpen(true);
+  };
+
+  const closeExchangeDialog = () => {
+    setExchangeDialogOpen(false);
+    setExchangeSourceUser(null);
+    setExchangeTargetHodId('');
+  };
+
+  const handleExchangeHod = async () => {
+    if (!exchangeSourceUser || !exchangeTargetHodId) return;
+    setExchangeSubmitting(true);
+    try {
+      await userService.exchangeHod({
+        sourceHodId: exchangeSourceUser.id,
+        targetHodId: exchangeTargetHodId
+      });
+      await Promise.all([refetch(), refetchDepartments()]);
+      toast.success('HOD exchange completed successfully.');
+      closeExchangeDialog();
+    } catch (error) {
+      console.error('Exchange HOD error:', error);
+      toast.error('Failed to exchange HOD.');
+    } finally {
+      setExchangeSubmitting(false);
+    }
+  };
+
+  const openExchangeManagerDialog = (user: User) => {
+    setExchangeManagerSourceUser(user);
+    setExchangeManagerTargetId('');
+    setExchangeManagerDialogOpen(true);
+  };
+
+  const closeExchangeManagerDialog = () => {
+    setExchangeManagerDialogOpen(false);
+    setExchangeManagerSourceUser(null);
+    setExchangeManagerTargetId('');
+  };
+
+  const handleExchangeManager = async () => {
+    if (!exchangeManagerSourceUser || !exchangeManagerTargetId) return;
+    setExchangeManagerSubmitting(true);
+    try {
+      await userService.exchangeManager({
+        sourceManagerId: exchangeManagerSourceUser.id,
+        targetManagerId: exchangeManagerTargetId
+      });
+      await Promise.all([refetch(), refetchDepartments()]);
+      toast.success('Manager exchange completed successfully.');
+      closeExchangeManagerDialog();
+    } catch (error) {
+      console.error('Exchange manager error:', error);
+      toast.error('Failed to exchange manager.');
+    } finally {
+      setExchangeManagerSubmitting(false);
+    }
+  };
+
+  const handleTransferDepartmentChange = (departmentId: string) => {
+    setTransferDeptId(departmentId);
+    setTransferManagerId('none');
+  };
+
+  const openTransferDialog = (user: User) => {
+    setTransferUser(user);
+    setTransferDeptId('');
+    setTransferManagerId('');
+    setTransferDialogOpen(true);
+  };
+
+  const closeTransferDialog = () => {
+    setTransferDialogOpen(false);
+    setTransferUser(null);
+    setTransferDeptId('');
+    setTransferManagerId('');
+  };
+
+  const handleTransferMember = async () => {
+    if (!transferUser || !transferDeptId) {
+      toast.error('Please select a target department.');
+      return;
+    }
+
+    if (transferDeptId === transferUser.departmentId) {
+      toast.error('Please select a different department.');
+      return;
+    }
+
+    setTransferSubmitting(true);
+    try {
+      const payload: any = {
+        role: 'member',
+        departmentId: transferDeptId,
+        managerId: transferManagerId && transferManagerId !== 'none' ? transferManagerId : null,
+      };
+
+      await userService.updateUser(transferUser.id, payload);
+      await Promise.all([refetch(), refetchDepartments()]);
+      toast.success('Member transferred successfully.');
+      closeTransferDialog();
+    } catch (error) {
+      console.error('Transfer member error:', error);
+      toast.error('Failed to transfer member.');
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
+
   const getRoleIcon = (role: UserRole) => {
     switch (role) {
       case 'super_admin':
@@ -330,6 +472,33 @@ export default function UserManagement() {
     const manager = users.find(u => u.id === managerId);
     return manager ? manager.name : 'Unknown Manager';
   };
+
+  const exchangeTargets = users.filter((u) =>
+    u.role === 'department_head' &&
+    u.isActive &&
+    u.id !== exchangeSourceUser?.id &&
+    !!u.departmentId
+  );
+
+  const exchangeManagerTargets = users.filter((u) =>
+    u.role === 'manager' &&
+    u.isActive &&
+    u.id !== exchangeManagerSourceUser?.id &&
+    !!u.departmentId &&
+    u.departmentId !== exchangeManagerSourceUser?.departmentId
+  );
+
+  const departmentsWithActiveHods = departments.filter((dept) =>
+    users.some((u) => u.role === 'department_head' && u.isActive && u.departmentId === dept.id)
+  );
+
+  const transferDeptOptions = transferUser
+    ? departmentsWithActiveHods.filter((dept) => dept.id !== transferUser.departmentId)
+    : departmentsWithActiveHods;
+
+  const transferManagerOptions = transferDeptId
+    ? users.filter((u) => u.role === 'manager' && u.isActive && u.departmentId === transferDeptId)
+    : [];
 
   // Statistics (use original users array, not filtered)
   const totalUsersCount = users.length;
@@ -748,6 +917,39 @@ export default function UserManagement() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
+                          {(user.role === 'department_head' || user.role === 'manager' || user.role === 'member') && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                >
+                                  <MoreVertical className="h-3 w-3 text-slate-600 dark:text-slate-400" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48">
+                                {user.role === 'department_head' && (
+                                  <DropdownMenuItem onClick={() => openExchangeDialog(user)}>
+                                    <ArrowLeftRight className="mr-2 h-4 w-4" />
+                                    Exchange HOD
+                                  </DropdownMenuItem>
+                                )}
+                                {user.role === 'manager' && (
+                                  <DropdownMenuItem onClick={() => openExchangeManagerDialog(user)}>
+                                    <ArrowLeftRight className="mr-2 h-4 w-4" />
+                                    Exchange Manager
+                                  </DropdownMenuItem>
+                                )}
+                                {user.role === 'member' && (
+                                  <DropdownMenuItem onClick={() => openTransferDialog(user)}>
+                                    <ArrowLeftRight className="mr-2 h-4 w-4" />
+                                    Transfer Member
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -845,6 +1047,39 @@ export default function UserManagement() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            {(user.role === 'department_head' || user.role === 'manager' || user.role === 'member') && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                  >
+                                    <MoreVertical className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48">
+                                  {user.role === 'department_head' && (
+                                    <DropdownMenuItem onClick={() => openExchangeDialog(user)}>
+                                      <ArrowLeftRight className="mr-2 h-4 w-4" />
+                                      Exchange HOD
+                                    </DropdownMenuItem>
+                                  )}
+                                  {user.role === 'manager' && (
+                                    <DropdownMenuItem onClick={() => openExchangeManagerDialog(user)}>
+                                      <ArrowLeftRight className="mr-2 h-4 w-4" />
+                                      Exchange Manager
+                                    </DropdownMenuItem>
+                                  )}
+                                  {user.role === 'member' && (
+                                    <DropdownMenuItem onClick={() => openTransferDialog(user)}>
+                                      <ArrowLeftRight className="mr-2 h-4 w-4" />
+                                      Transfer Member
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
                           </div>
                         </div>
                         
@@ -1015,6 +1250,256 @@ export default function UserManagement() {
         </Card>
 
         {/* Dialogs */}
+        <Dialog
+          open={exchangeDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeExchangeDialog();
+            } else {
+              setExchangeDialogOpen(true);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[520px] border-slate-200 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle>Exchange HOD</DialogTitle>
+              <DialogDescription>
+                Swap department heads between two departments. Managers and members remain in their departments.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="text-sm text-slate-700 dark:text-slate-300">
+                Current HOD:{' '}
+                <span className="font-semibold">
+                  {exchangeSourceUser?.name || '—'} ({getDepartmentName(exchangeSourceUser?.departmentId)})
+                </span>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Target Department HOD
+                </label>
+                <Select value={exchangeTargetHodId} onValueChange={setExchangeTargetHodId}>
+                  <SelectTrigger className="border-slate-200 dark:border-slate-600">
+                    <SelectValue placeholder="Select target HOD" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {exchangeTargets.length > 0 ? (
+                      exchangeTargets.map((hod) => (
+                        <SelectItem key={hod.id} value={hod.id}>
+                          {hod.name} — {getDepartmentName(hod.departmentId)}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No other HODs available
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  This will swap department head assignments and transfer HOD manager/member responsibility.
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={closeExchangeDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleExchangeHod}
+                disabled={!exchangeTargetHodId || exchangeSubmitting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {exchangeSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Exchanging...
+                  </>
+                ) : (
+                  'Exchange HOD'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={exchangeManagerDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeExchangeManagerDialog();
+            } else {
+              setExchangeManagerDialogOpen(true);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[520px] border-slate-200 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle>Exchange Manager</DialogTitle>
+              <DialogDescription>
+                Swap managers between two departments. Members stay in their departments and will report to the new manager.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="text-sm text-slate-700 dark:text-slate-300">
+                Current Manager:{' '}
+                <span className="font-semibold">
+                  {exchangeManagerSourceUser?.name || '—'} ({getDepartmentName(exchangeManagerSourceUser?.departmentId)})
+                </span>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Target Department Manager
+                </label>
+                <Select value={exchangeManagerTargetId} onValueChange={setExchangeManagerTargetId}>
+                  <SelectTrigger className="border-slate-200 dark:border-slate-600">
+                    <SelectValue placeholder="Select target manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {exchangeManagerTargets.length > 0 ? (
+                      exchangeManagerTargets.map((manager) => (
+                        <SelectItem key={manager.id} value={manager.id}>
+                          {manager.name} — {getDepartmentName(manager.departmentId)}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No other managers available
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Teams stay in their departments and will report to the incoming manager.
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={closeExchangeManagerDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleExchangeManager}
+                disabled={!exchangeManagerTargetId || exchangeManagerSubmitting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {exchangeManagerSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Exchanging...
+                  </>
+                ) : (
+                  'Exchange Manager'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={transferDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeTransferDialog();
+            } else {
+              setTransferDialogOpen(true);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[520px] border-slate-200 dark:border-slate-700">
+            <DialogHeader>
+              <DialogTitle>Transfer Member</DialogTitle>
+              <DialogDescription>
+                Move a member to another department and optionally assign a manager.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="text-sm text-slate-700 dark:text-slate-300">
+                Member:{' '}
+                <span className="font-semibold">
+                  {transferUser?.name || '-'} ({getDepartmentName(transferUser?.departmentId)})
+                </span>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Target Department
+                </label>
+                <Select value={transferDeptId} onValueChange={handleTransferDepartmentChange}>
+                  <SelectTrigger className="border-slate-200 dark:border-slate-600">
+                    <SelectValue placeholder="Select department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {transferDeptOptions.length > 0 ? (
+                      transferDeptOptions.map((dept) => (
+                        <SelectItem key={dept.id} value={dept.id}>
+                          {dept.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No departments with active HOD
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Only departments with an active HOD are available.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Manager (optional)
+                </label>
+                <Select
+                  value={transferManagerId}
+                  onValueChange={setTransferManagerId}
+                  disabled={!transferDeptId}
+                >
+                  <SelectTrigger className="border-slate-200 dark:border-slate-600">
+                    <SelectValue placeholder={transferDeptId ? 'Select manager (optional)' : 'Select department first'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Report to HOD (no manager)</SelectItem>
+                    {transferManagerOptions.length > 0 ? (
+                      transferManagerOptions.map((manager) => (
+                        <SelectItem key={manager.id} value={manager.id}>
+                          {manager.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-managers" disabled>
+                        No managers in this department
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  If no manager is selected, the member will report directly to the HOD.
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={closeTransferDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleTransferMember}
+                disabled={!transferDeptId || transferDeptId === transferUser?.departmentId || transferSubmitting}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {transferSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Transferring...
+                  </>
+                ) : (
+                  'Transfer Member'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <AddUserDialog
           open={addDialogOpen}
           onOpenChange={setAddDialogOpen}

@@ -79,33 +79,8 @@ class UserService {
       return response;
     } catch (error) {
       console.error('Get user by ID error:', error);
-      // Return mock data when API is not available
-      return this.getMockUserData(id);
+      throw error;
     }
-  }
-
-  // Mock user data for development
-  private getMockUserData(id: string): { data: User } {
-    const mockUser: User = {
-      id: id || 'mock-user-123',
-      firstName: 'John',
-      lastName: 'Doe',
-      email: 'john.doe@example.com',
-      username: 'johndoe',
-      role: 'member',
-      companyId: 'mock-company-123',
-      departmentId: 'mock-dept-123',
-      status: 'active',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-      phone: '+1 (555) 123-4567',
-      mobileNumber: '+1 (555) 987-6543',
-      lastLogin: new Date().toISOString(),
-      lastActive: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    return { data: mockUser };
   }
 
   // Create new user
@@ -122,6 +97,34 @@ class UserService {
     }
   }
 
+  // Exchange HOD between two departments
+  async exchangeHod(payload: { sourceHodId: string; targetHodId: string }) {
+    try {
+      const response = await apiService.post(
+        API_CONFIG.ENDPOINTS.USERS.EXCHANGE_HOD,
+        payload
+      );
+      return response;
+    } catch (error) {
+      console.error('Exchange HOD error:', error);
+      throw error;
+    }
+  }
+
+  // Exchange managers between two departments
+  async exchangeManager(payload: { sourceManagerId: string; targetManagerId: string }) {
+    try {
+      const response = await apiService.post(
+        API_CONFIG.ENDPOINTS.USERS.EXCHANGE_MANAGER,
+        payload
+      );
+      return response;
+    } catch (error) {
+      console.error('Exchange manager error:', error);
+      throw error;
+    }
+  }
+
   // Update user
   async updateUser(id: string, userData: UpdateUserData) {
     try {
@@ -132,8 +135,7 @@ class UserService {
       return response;
     } catch (error) {
       console.error('Update user error:', error);
-      // Return mock updated data when API is not available
-      return this.getMockUpdatedUserData(id, userData);
+      throw error;
     }
   }
 
@@ -163,30 +165,6 @@ class UserService {
       console.error('Change user password error:', error);
       throw error;
     }
-  }
-
-  // Mock updated user data for development
-  private getMockUpdatedUserData(id: string, userData: UpdateUserData): { data: User } {
-    const mockUser: User = {
-      id: id || 'mock-user-123',
-      firstName: userData.firstName || 'John',
-      lastName: userData.lastName || 'Doe',
-      email: userData.email || 'john.doe@example.com',
-      username: userData.username || 'johndoe',
-      role: userData.role || 'member',
-      companyId: 'mock-company-123',
-      departmentId: userData.departmentId || 'mock-dept-123',
-      status: userData.status || 'active',
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-      phone: '+1 (555) 123-4567', // Keep phone in mock data for backward compatibility
-      mobileNumber: userData.mobileNumber || '+1 (555) 987-6543',
-      lastLogin: new Date().toISOString(),
-      lastActive: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    return { data: mockUser };
   }
 
   // Delete user

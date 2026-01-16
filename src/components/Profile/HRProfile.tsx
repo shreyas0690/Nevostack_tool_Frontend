@@ -21,30 +21,13 @@ export default function HRProfile() {
   const { currentUser, updateCurrentUser } = useAuth();
   const { toast } = useToast();
 
-  // Early return if no currentUser (not logged in)
-  if (!currentUser) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-            <p className="mt-2 text-muted-foreground">Loading profile...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const department = currentUser?.departmentId 
-    ? mockDepartments.find(d => d.id === currentUser.departmentId)
-    : undefined;
-
-  const [firstName, setFirstName] = useState(currentUser?.firstName || currentUser?.name?.split(' ')[0] || '');
-  const [lastName, setLastName] = useState(currentUser?.lastName || currentUser?.name?.split(' ').slice(1).join(' ') || '');
-  const [email, setEmail] = useState(currentUser?.email || '');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string>('');
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
@@ -52,6 +35,26 @@ export default function HRProfile() {
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const nameParts = (currentUser.name || '').trim().split(' ').filter(Boolean);
+    setFirstName(currentUser.firstName || nameParts[0] || '');
+    setLastName(currentUser.lastName || nameParts.slice(1).join(' ') || '');
+    setEmail(currentUser.email || '');
+    setPhone(
+      currentUser.mobileNumber ||
+        (currentUser as any).phoneNumber ||
+        (currentUser as any).phone ||
+        ''
+    );
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser?.avatar) {
+      setAvatarLoadError(false);
+    }
+  }, [currentUser?.avatar]);
 
   // Ensure current password field is always empty for security
   React.useEffect(() => {
@@ -87,6 +90,7 @@ export default function HRProfile() {
       }
 
       console.log('Selected file:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+      setAvatarLoadError(false);
       setAvatarFile(file);
 
       // Convert to data URL for preview
@@ -105,7 +109,7 @@ export default function HRProfile() {
     console.log('Current currentUser?.avatar:', currentUser?.avatar);
     console.log('Current avatarPreview:', avatarPreview);
 
-    if (currentUser?.avatar && !avatarPreview) {
+    if (currentUser?.avatar && !avatarPreview && !avatarLoadError) {
       console.log('✅ Setting initial avatar from currentUser:', currentUser.avatar);
       setAvatarPreview(currentUser.avatar);
     } else if (currentUser?.avatar) {
@@ -119,15 +123,31 @@ export default function HRProfile() {
         setAvatarPreview(savedAvatar);
       }
     }
-  }, [currentUser?.avatar, avatarPreview]);
+  }, [currentUser?.avatar, avatarPreview, avatarLoadError]);
 
   // Update avatar preview when currentUser avatar changes (for uploads)
   useEffect(() => {
-    if (currentUser?.avatar && avatarPreview !== currentUser.avatar) {
+    if (currentUser?.avatar && avatarPreview !== currentUser.avatar && !avatarLoadError) {
       setAvatarPreview(currentUser.avatar);
       console.log('Avatar updated from currentUser:', currentUser.avatar);
     }
-  }, [currentUser?.avatar]);
+  }, [currentUser?.avatar, avatarLoadError, avatarPreview]);
+
+  const getDepartmentName = (departmentRef: any) => {
+    if (!departmentRef) return '';
+    if (typeof departmentRef === 'string') {
+      const match = mockDepartments.find((dept) => dept.id === departmentRef);
+      return match?.name || '';
+    }
+    if (typeof departmentRef === 'object') {
+      const name = departmentRef.name || departmentRef.title;
+      if (name) return name;
+      const refId = departmentRef.id || departmentRef._id;
+      const match = refId ? mockDepartments.find((dept) => dept.id === refId) : null;
+      return match?.name || '';
+    }
+    return '';
+  };
 
   const initials = ((firstName || '') + ' ' + (lastName || ''))
     .trim()
@@ -149,6 +169,8 @@ export default function HRProfile() {
     console.log('🔍 HRProfile - avatarPreview:', avatarPreview);
     console.log('🔍 HRProfile - initials:', initials);
   }, [currentUser, firstName, lastName, avatarPreview, initials]);
+
+  const departmentName = getDepartmentName(currentUser?.departmentId);
 
   const handleSaveProfile = async () => {
     if (!firstName || !lastName) {
@@ -319,6 +341,19 @@ export default function HRProfile() {
     }
   };
 
+  if (!currentUser) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-2 text-muted-foreground">Loading profile...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -337,7 +372,7 @@ export default function HRProfile() {
           <div className="flex items-center gap-6 mt-6">
             <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-lg backdrop-blur-sm">
               <Building2 className="w-4 h-4" />
-              <span className="text-sm font-medium">{department?.name || 'HR Department'}</span>
+              <span className="text-sm font-medium">{departmentName || 'HR Department'}</span>
             </div>
             <div className="flex items-center gap-2 bg-white/10 px-4 py-2 rounded-lg backdrop-blur-sm">
               <Users className="w-4 h-4" />
@@ -369,21 +404,10 @@ export default function HRProfile() {
                         alt="Profile"
                         className="w-full h-full object-cover rounded-full"
                         onLoad={() => console.log('✅ Avatar image loaded successfully:', avatarPreview)}
-                        onError={(e) => {
+                        onError={() => {
                           console.error('❌ Avatar image failed to load:', avatarPreview);
-                          console.log('Current avatarPreview:', avatarPreview);
-                          console.log('Current currentUser:', currentUser);
-                          console.log('Current currentUser.avatar:', currentUser?.avatar);
-
-                          // Try different approaches to load the avatar
-                          if (currentUser?.avatar && currentUser.avatar !== avatarPreview) {
-                            console.log('🔄 Attempting to reload avatar from currentUser');
-                            setAvatarPreview(currentUser.avatar);
-                          } else {
-                            console.log('💡 Avatar might not exist. User needs to upload one first.');
-                            // Clear the preview to show fallback
-                            setAvatarPreview('');
-                          }
+                          setAvatarLoadError(true);
+                          setAvatarPreview('');
                         }}
                       />
                     ) : (
@@ -638,4 +662,3 @@ export default function HRProfile() {
     </div>
   );
 }
-

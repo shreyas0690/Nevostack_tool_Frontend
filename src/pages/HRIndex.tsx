@@ -5,8 +5,8 @@ import { X, UserCheck } from 'lucide-react';
 import HRHeader from '@/components/Layout/HRHeader';
 import HRSidebar from '@/components/Layout/HRSidebar';
 import HRDashboard from '@/components/Dashboard/HRDashboard';
-import HRDepartments from '@/components/Departments/HRDepartments';
-import HRAnalytics from '@/components/Analytics/HRAnalytics';
+import DepartmentsManagement from '@/components/Departments/DepartmentsManagement';
+import AnalyticsDashboard from '@/components/Analytics/AnalyticsDashboard';
 import HRTasksManagement from '@/components/Tasks/HRTasksManagement';
 import HRMeetingsManagement from '@/components/Meetings/HRMeetingsManagement';
 import HRLeaveManagement from '@/components/Leave/HRLeaveManagement';
@@ -38,9 +38,9 @@ const HRIndex = () => {
       case 'dashboard':
         return <HRDashboard />;
       case 'departments':
-        return <HRDepartments />;
+        return <DepartmentsManagement />;
       case 'analytics':
-        return <HRAnalytics />;
+        return <AnalyticsDashboard />;
       case 'tasks':
         return <HRTasksManagement />;
       case 'meetings':
@@ -199,7 +199,6 @@ const HRIndex = () => {
 };
 
 export default HRIndex;
-
 
 
 

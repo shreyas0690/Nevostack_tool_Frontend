@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, BellRing } from 'lucide-react';
-import { useUserTheme } from '@/hooks/useUserTheme';
+import { formatDistanceToNow } from 'date-fns';
 
 function SimpleNotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState([]);
+  const [notifications, setNotifications] = useState([] as any[]);
   const [loading, setLoading] = useState(false);
-  const { resolvedTheme } = useUserTheme();
 
   const fetchUnreadCount = async () => {
     try {
@@ -31,9 +30,11 @@ function SimpleNotificationBell() {
     }
   };
 
-  const fetchUnreadNotifications = async () => {
+  const fetchUnreadNotifications = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground && notifications.length === 0) {
+        setLoading(true);
+      }
       const token = localStorage.getItem('accessToken');
       if (!token) {
         return;
@@ -60,20 +61,44 @@ function SimpleNotificationBell() {
 
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 10000);
-    return () => clearInterval(interval);
+    // Initial fetch of notifications to populate the list if there are unread ones
+    fetchUnreadNotifications(true);
+
+    const interval = setInterval(fetchUnreadCount, 30000); // Reduced frequency since we have WS
+
+    // Listen for WebSocket notifications
+    const handleNotification = (event: any) => {
+      const notification = event.detail;
+      console.log('🔔 Bell received notification:', notification);
+
+      // Update unread count
+      setUnreadCount(prev => prev + 1);
+
+      // Add to list immediately
+      setNotifications(prev => [notification, ...prev]);
+    };
+
+    window.addEventListener('websocket-notification', handleNotification as EventListener);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('websocket-notification', handleNotification as EventListener);
+    };
   }, []);
 
   const handleBellClick = () => {
     const newIsOpen = !isOpen;
     setIsOpen(newIsOpen);
-    
+
     if (newIsOpen) {
-      fetchUnreadNotifications();
+      // Only fetch if we don't have data or want to ensure sync
+      // But since we have WS, we can trust local state mostly. 
+      // We'll do a background refresh just in case.
+      fetchUnreadNotifications(true);
     }
   };
 
-  const markAsRead = async (notificationId) => {
+  const markAsRead = async (notificationId: string) => {
     try {
       const token = localStorage.getItem('accessToken');
       if (!token) return;
@@ -86,11 +111,11 @@ function SimpleNotificationBell() {
       });
 
       // Update local state
-      setNotifications(prev => 
-        prev.filter(n => n._id !== notificationId) // Remove from unread list
+      setNotifications(prev =>
+        prev.filter((n: any) => (n._id || n.id) !== notificationId) // Remove from unread list
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
-      
+
       // Refresh the unread notifications list
       fetchUnreadNotifications();
     } catch (error) {
@@ -103,37 +128,22 @@ function SimpleNotificationBell() {
     <div className="relative">
       <button
         onClick={handleBellClick}
-        className={`relative p-2 focus:outline-none transition-colors duration-200 ${
-          resolvedTheme === 'dark' 
-            ? 'text-gray-300 hover:text-white hover:bg-gray-800' 
-            : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-        }`}
-        style={{ 
-          backgroundColor: unreadCount > 0 
-            ? (resolvedTheme === 'dark' ? '#451a03' : '#fef3c7') 
-            : 'transparent',
-          border: unreadCount > 0 
-            ? `2px solid ${resolvedTheme === 'dark' ? '#f59e0b' : '#f59e0b'}` 
-            : 'none',
-          borderRadius: '6px'
-        }}
+        className={`relative p-2 focus:outline-none transition-all duration-200 rounded-full
+          ${unreadCount > 0
+            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50'
+            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+          }`}
       >
         {unreadCount > 0 ? (
-          <BellRing className={`h-5 w-5 ${resolvedTheme === 'dark' ? 'text-orange-400' : 'text-orange-500'}`} />
+          <BellRing className="h-5 w-5" />
         ) : (
-          <Bell className={`h-5 w-5 ${resolvedTheme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`} />
+          <Bell className="h-5 w-5" />
         )}
-        
+
         {unreadCount > 0 && (
-          <span 
-            className={`absolute -top-1 -right-1 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold ${
-              resolvedTheme === 'dark' ? 'bg-red-500' : 'bg-red-600'
-            }`}
-            style={{ 
-              fontSize: '11px',
-              fontWeight: 'bold',
-              zIndex: 1000
-            }}
+          <span
+            className="absolute top-0 right-0 transform translate-x-1/4 -translate-y-1/4 
+              flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-950"
           >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -141,86 +151,83 @@ function SimpleNotificationBell() {
       </button>
 
       {isOpen && (
-        <div 
-          className={`absolute right-0 mt-2 w-80 rounded-lg shadow-xl border backdrop-blur-sm ${
-            resolvedTheme === 'dark' 
-              ? 'bg-gray-900/95 border-gray-700 shadow-gray-900/50' 
-              : 'bg-white/95 border-gray-200 shadow-gray-900/25'
-          }`}
-          style={{ zIndex: 1000 }}
+        <div
+          className="absolute right-0 mt-2 w-96 rounded-xl shadow-2xl border backdrop-blur-xl z-50 origin-top-right animate-in fade-in zoom-in-95 duration-200
+            bg-white/95 dark:bg-gray-900/95 border-gray-200 dark:border-gray-800"
         >
-          <div className={`p-4 border-b ${resolvedTheme === 'dark' ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-gray-50/50'}`}>
-            <div className="flex justify-between items-center">
-              <h3 className={`text-lg font-semibold ${resolvedTheme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                Notifications ({unreadCount} unread)
-              </h3>
-              <button
-                onClick={() => setIsOpen(false)}
-                className={`text-xl transition-colors duration-200 ${
-                  resolvedTheme === 'dark' 
-                    ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700 rounded p-1' 
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded p-1'
-                }`}
-              >
-                ×
-              </button>
+          <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
+              {unreadCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                  {unreadCount} new
+                </span>
+              )}
             </div>
+            {unreadCount > 0 && (
+              <button
+                onClick={() => notifications.forEach(n => markAsRead(n._id || n.id))}
+                className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+              >
+                Mark all read
+              </button>
+            )}
           </div>
-          
-          <div className="max-h-96 overflow-y-auto">
+
+          <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
             {loading ? (
-              <div className={`p-6 text-center ${resolvedTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                <div className="flex items-center justify-center mb-2">
-                  <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${resolvedTheme === 'dark' ? 'border-blue-400' : 'border-blue-500'}`}></div>
-                </div>
-                <div className="text-sm">Loading notifications...</div>
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 dark:border-blue-400 mb-3"></div>
+                <p className="text-sm">Loading updates...</p>
               </div>
             ) : notifications.length === 0 ? (
-              <div className={`p-6 text-center ${resolvedTheme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                <div className={`w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center ${resolvedTheme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                  <Bell className={`h-6 w-6 ${resolvedTheme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`} />
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 mb-4 rounded-full bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center">
+                  <Bell className="h-8 w-8 text-gray-300 dark:text-gray-600" />
                 </div>
-                <div className="text-sm font-medium">No unread notifications</div>
-                <div className="text-xs mt-1">You're all caught up!</div>
+                <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">No notifications</h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-[180px]">
+                  You're all caught up! Check back later for updates.
+                </p>
               </div>
             ) : (
-              <div className={`divide-y ${resolvedTheme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {notifications.slice(0, 10).map((notification) => (
-                    <div
-                      key={notification._id || notification.id}
-                      className={`p-4 cursor-pointer transition-all duration-200 ${
-                        resolvedTheme === 'dark' 
-                          ? `hover:bg-gray-700/80 ${!notification.isRead ? 'bg-blue-900/20 border-l-4 border-l-blue-400 shadow-sm' : 'bg-gray-800/50'}`
-                          : `hover:bg-gray-50 ${!notification.isRead ? 'bg-blue-50 border-l-4 border-l-blue-500 shadow-sm' : 'bg-white'}`
-                      }`}
-                      onClick={() => markAsRead(notification._id || notification.id)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h4 className={`text-sm font-medium ${
-                            !notification.isRead ? 'font-semibold' : ''
-                          } ${resolvedTheme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {notification.title || 'No Title'}
-                          </h4>
-                          <p className={`text-sm mt-1 ${resolvedTheme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
-                            {notification.message || 'No Message'}
+                  <div
+                    key={notification._id || notification.id}
+                    onClick={() => markAsRead(notification._id || notification.id)}
+                    className={`group relative p-4 cursor-pointer transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-800/50
+                      ${!notification.isRead ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+                  >
+                    <div className="flex gap-3">
+                      <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 
+                        ${!notification.isRead ? 'bg-blue-500 dark:bg-blue-400' : 'bg-transparent'}`}
+                      />
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex justify-between items-start gap-2">
+                          <p className={`text-sm leading-none ${!notification.isRead ? 'font-semibold text-gray-900 dark:text-gray-100' : 'font-medium text-gray-700 dark:text-gray-300'}`}>
+                            {notification.title}
                           </p>
-                          <p className={`text-xs mt-1 ${resolvedTheme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            {notification.createdAt ? new Date(notification.createdAt).toLocaleString() : 'No Date'}
-                          </p>
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap flex-shrink-0">
+                            {notification.createdAt ? formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true }) : 'Just now'}
+                          </span>
                         </div>
-                        {!notification.isRead && (
-                          <div className={`w-2 h-2 rounded-full ml-2 mt-1 ${
-                            resolvedTheme === 'dark' ? 'bg-blue-400' : 'bg-blue-500'
-                          }`}></div>
-                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">
+                          {notification.message}
+                        </p>
                       </div>
                     </div>
+                  </div>
                 ))}
               </div>
             )}
           </div>
-          
+
+          <div className="p-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 rounded-b-xl">
+            <button className="w-full py-2 text-xs font-medium text-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
+              View all notifications
+            </button>
+          </div>
         </div>
       )}
     </div>

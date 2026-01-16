@@ -29,6 +29,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { User as UserType, UserRole } from '@/types/company';
+import { toUiRole } from '@/utils/roleMap';
+import { getDepartmentId } from '@/utils/normalize';
 import { departmentService } from '@/services/departmentService';
 import { userService } from '@/services/userService';
 import { useQuery } from '@tanstack/react-query';
@@ -91,6 +93,9 @@ export default function AddUserDialog({ open, onOpenChange, onUserAdded }: AddUs
     setIsSubmitting(true);
     
     try {
+      const normalizedDepartmentId = data.departmentId && data.departmentId !== 'none' ? data.departmentId : undefined;
+      const normalizedManagerId = data.managerId && data.managerId !== 'none' ? data.managerId : undefined;
+
       const newUser: any = {
         id: `user-${Date.now()}`,
         name: `${data.firstName} ${data.lastName || ''}`.trim(),
@@ -100,28 +105,30 @@ export default function AddUserDialog({ open, onOpenChange, onUserAdded }: AddUs
         password: data.password,
         mobileNumber: data.mobileNumber || undefined,
         role: data.role,
-        departmentId: data.departmentId || undefined,
-        managerId: data.managerId || undefined,
+        departmentId: normalizedDepartmentId,
+        managerId: normalizedManagerId,
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
         isActive: data.isActive,
         createdAt: new Date(),
       };
 
 
-      // If creating a manager, attach hodId so backend validation passes
+      // If creating a manager, attach both headId (canonical) and hodId (compat) so backend validation passes
       if (data.role === 'manager') {
         // find HOD for the selected department
-        const dept = departmentsWithHODs.find((d: any) => String(d.id) === String(data.departmentId));
+        const dept = departmentsWithHODs.find((d: any) => String(d.id) === String(normalizedDepartmentId));
         if (!dept || !dept.hod) {
           console.error('No HOD found for selected department');
           return;
         }
-        // include hodId in the payload passed to parent
-        (newUser as any).hodId = dept.hod.id || dept.hod._id;
+        // include canonical headId and legacy hodId for compatibility
+        const resolvedHeadId = String(dept.hod.id || dept.hod._id);
+        (newUser as any).headId = resolvedHeadId;
+        (newUser as any).hodId = resolvedHeadId;
       }
 
-      // include managerId as provided (or 'none') so backend can attach member to manager or HOD
-      (newUser as any).managerId = data.managerId || 'none';
+      if (!normalizedDepartmentId) delete newUser.departmentId;
+      if (!normalizedManagerId) delete newUser.managerId;
       onUserAdded(newUser);
       onOpenChange(false);
       form.reset();
@@ -149,20 +156,34 @@ export default function AddUserDialog({ open, onOpenChange, onUserAdded }: AddUs
     queryKey: ['users-all'],
     queryFn: async () => {
       const res: any = await userService.getUsers({ limit: 1000 });
-      return (res && (res.data || res.users)) || [];
+      const list = (res && (res.data || res.users)) || [];
+      return list.map((user: any) => ({
+        ...user,
+        role: toUiRole(user?.role),
+        isActive: typeof user?.isActive === 'boolean' ? user.isActive : user?.status === 'active',
+      }));
       console.log("name",res.data)
     }
   });
 
-  // Normalize departments with their HODs (only show departments that have an active HOD)
-  const departmentsWithHODs = fetchedDepts.map((dept: any) => {
-    const hod = fetchedUsers.find((user: any) =>
-      user.role === 'department_head' &&
-      (String(user.departmentId || (user.department && (user.department._id || user.department.id))) === String(dept.id) || String(user.departmentId) === String(dept.id)) &&
-      user.isActive
-    );
-    return { ...dept, hod };
-  }).filter((dept: any) => dept.hod);
+  // Normalize departments with their HODs (accept both 'department_head' and backend 'hod')
+  const departmentsWithHODs = fetchedDepts
+    .map((dept: any) => {
+      const deptId = String(dept.id ?? dept._id ?? '');
+      const hod = fetchedUsers.find((user: any) => {
+        const role = toUiRole(user?.role);
+        if (!user?.isActive) return false;
+        if (role !== 'department_head') return false;
+        const uDeptId = user?.departmentId
+          ? String(getDepartmentId(user.departmentId))
+          : user?.department
+          ? String(getDepartmentId(user.department))
+          : '';
+        return String(uDeptId) === String(deptId);
+      });
+      return { ...dept, id: deptId, hod };
+    })
+    .filter((dept: any) => dept.hod);
 
   // Helper to normalize user's department id from different backend shapes
   const extractUserDepartmentId = (user: any) => {

@@ -61,7 +61,7 @@ const AppContent = () => {
   } catch (error) {
     console.warn('TenantProvider not available, using defaults:', error);
   }
-  
+
   // Check for SaaS admin authentication
   const [isSaaSAuthenticated, setIsSaaSAuthenticated] = React.useState(false);
   const [saasUser, setSaasUser] = React.useState(null);
@@ -73,19 +73,19 @@ const AppContent = () => {
         // First try using saasAuthService
         const isAuthenticated = saasAuthService.isSaaSAuthenticated();
         const user = saasAuthService.getSaaSUser();
-        
+
         console.log('🔍 Checking SaaS auth:', { isAuthenticated, user: user?.email });
         debugSaaSAuth(); // Debug authentication state
         setIsSaaSAuthenticated(isAuthenticated);
         setSaasUser(user);
       } catch (error) {
         console.log('❌ Error checking SaaS auth with service, trying direct localStorage check:', error);
-        
+
         // Fallback: Check localStorage directly
         try {
           const saasToken = localStorage.getItem('saas_access_token');
           const saasUser = localStorage.getItem('saas_user');
-          
+
           if (saasToken && saasUser) {
             const user = JSON.parse(saasUser);
             console.log('🔍 Direct localStorage check - SaaS auth found:', { user: user?.email });
@@ -103,7 +103,7 @@ const AppContent = () => {
         }
       }
     };
-    
+
     checkSaaSAuth();
   }, []);
 
@@ -113,7 +113,7 @@ const AppContent = () => {
     const authToken = localStorage.getItem('nevostack_auth');
     const accessToken = localStorage.getItem('accessToken');
     const saasToken = localStorage.getItem('saas_access_token');
-    
+
     if (!authToken || !accessToken) {
       // Only clear regular auth data if no SaaS auth exists
       if (!saasToken) {
@@ -139,8 +139,8 @@ const AppContent = () => {
   // Check if tenant is active (for SaaS functionality)
   if (!isTenantActive && currentTenant) {
     const isTrialExpired = currentTenant.subscriptionStatus === 'trial' &&
-                          currentTenant.trialEndsAt &&
-                          new Date(currentTenant.trialEndsAt) <= new Date();
+      currentTenant.trialEndsAt &&
+      new Date(currentTenant.trialEndsAt) <= new Date();
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100">
@@ -211,15 +211,23 @@ const AppContent = () => {
         </div>
       );
     }
-    
+
     // Check if we're on SaaS routes - show appropriate SaaS login
     if (window.location.pathname.startsWith('/saas')) {
       // If on SaaS admin route, show super admin login
       if (window.location.pathname === '/saas/admin') {
-        return <SaaSSuperAdminLoginPage />;
+        return (
+          <BrowserRouter>
+            <SaaSSuperAdminLoginPage />
+          </BrowserRouter>
+        );
       }
       // Otherwise show regular SaaS login
-      return <SaaSLoginPage onLogin={(success) => success} />;
+      return (
+        <BrowserRouter>
+          <SaaSLoginPage onLogin={(success) => success} />
+        </BrowserRouter>
+      );
     }
     // Otherwise show regular workspace login
     return <LoginPage onLogin={(success) => success} />;
@@ -228,19 +236,19 @@ const AppContent = () => {
   // Route based on user role
   const renderDashboard = () => {
     console.log('🔍 Routing Dashboard - User Role:', userRole, 'User Email:', currentUser?.email);
-    
+
     // Only specific platform admin sees SaaS Super Admin Dashboard
     if (userRole === 'super_admin' && currentUser?.email === 'admin@demo.com') {
       console.log('→ Routing to SaaS Super Admin Dashboard');
       return <SaaSSuperAdminIndex />;
     }
-    
+
     // For general admin users (including those with department_head role but admin privileges)
     if (userRole === 'admin' || userRole === 'super_admin') {
       console.log('→ Routing to Regular Admin Dashboard');
       return <Index />;
     }
-    
+
     if (userRole === 'department_head') {
       console.log('→ Routing to Department Head Dashboard');
       return <HODIndex />;
@@ -261,7 +269,7 @@ const AppContent = () => {
       console.log('→ Routing to HR Manager Dashboard');
       return <HRManagerIndex />;
     }
-    
+
     // Fallback: All other users see regular company admin dashboard
     console.log('→ Routing to Default Admin Dashboard (fallback)');
     return <Index />;

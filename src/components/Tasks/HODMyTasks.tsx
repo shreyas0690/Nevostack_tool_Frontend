@@ -8,9 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Target, 
-  Search, 
+import {
+  Target,
+  Search,
   Calendar,
   User,
   CheckCircle,
@@ -24,7 +24,10 @@ import {
   CalendarDays,
   CheckCircle2,
   Paperclip,
-  File
+  File,
+  MessageCircle,
+  Users,
+  Eye
 } from 'lucide-react';
 import {
   Select,
@@ -36,6 +39,15 @@ import {
 import { useAuth } from '@/components/Auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { mockUsers } from '@/data/mockData';
+import { normalizeAttachment } from '@/utils/attachments';
+import TaskDiscussionDialog from './TaskDiscussionDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 export default function HODMyTasks() {
   const { currentUser } = useAuth();
@@ -48,6 +60,10 @@ export default function HODMyTasks() {
   const [assignedByFilter, setAssignedByFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('recent');
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
+  const [discussionTask, setDiscussionTask] = useState<any>(null);
+  const [showTaskDetailsDialog, setShowTaskDetailsDialog] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
 
   // Update current time every 30 seconds for more accurate countdown
   useEffect(() => {
@@ -58,7 +74,7 @@ export default function HODMyTasks() {
     return () => clearInterval(timer);
   }, []);
 
-    // Helper: normalize various date shapes into Date
+  // Helper: normalize various date shapes into Date
   const normalizeDate = (d: any) => {
     if (!d) return new Date(0);
     if (d instanceof Date) return d;
@@ -66,17 +82,67 @@ export default function HODMyTasks() {
     return isNaN(parsed.getTime()) ? new Date(0) : parsed;
   };
 
-    // Helper function to calculate time remaining with real-time countdown
+  const getEndOfDay = (date: Date) => (
+    new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+  );
+
+  const resolveDueDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null;
+      if (value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0 && value.getMilliseconds() === 0) {
+        return getEndOfDay(value);
+      }
+      return new Date(value.getTime());
+    }
+
+    if (typeof value === 'string') {
+      const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnlyMatch) {
+        const year = Number(dateOnlyMatch[1]);
+        const month = Number(dateOnlyMatch[2]) - 1;
+        const day = Number(dateOnlyMatch[3]);
+        return new Date(year, month, day, 23, 59, 59, 999);
+      }
+
+      const midnightMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})T00:00(?::00(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/);
+      if (midnightMatch) {
+        const year = Number(midnightMatch[1]);
+        const month = Number(midnightMatch[2]) - 1;
+        const day = Number(midnightMatch[3]);
+        return new Date(year, month, day, 23, 59, 59, 999);
+      }
+
+      const parsed = new Date(value);
+      if (isNaN(parsed.getTime())) return null;
+      if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0 && parsed.getMilliseconds() === 0) {
+        return getEndOfDay(parsed);
+      }
+      return parsed;
+    }
+
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return null;
+    if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0 && parsed.getMilliseconds() === 0) {
+      return getEndOfDay(parsed);
+    }
+    return parsed;
+  };
+
+  // Helper function to calculate time remaining with real-time countdown
   const getTimeRemaining = (dueDate: any) => {
     const now = currentTime;
-    const due = normalizeDate(dueDate);
+    const due = resolveDueDate(dueDate);
+    if (!due) {
+      return { text: 'No due date', color: 'text-slate-500', isOverdue: false };
+    }
     const diff = due.getTime() - now.getTime();
 
     if (diff <= 0) {
       const overdueDiff = Math.abs(diff);
       const overdueDays = Math.floor(overdueDiff / (1000 * 60 * 60 * 24));
       const overdueHours = Math.floor((overdueDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      
+
       if (overdueDays > 0) {
         return { text: `${overdueDays}d overdue`, color: 'text-red-600', isOverdue: true };
       } else if (overdueHours > 0) {
@@ -155,13 +221,13 @@ export default function HODMyTasks() {
 
   // Update by object reference (safe when tasks may not have stable id fields)
   const updateTaskStatusByRef = (targetTask: any, newStatus: string) => {
-    setTasks(prevTasks => 
+    setTasks(prevTasks =>
       prevTasks.map(task => task === targetTask ? { ...task, status: newStatus as any, updatedAt: new Date() } : task)
     );
   };
 
   // Get tasks assigned TO the current HOD user (filter applied server-side)
-  const { data: tasksData = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useQuery({
+  const { data: tasksData, isLoading: isLoadingTasks, refetch: refetchTasks } = useQuery({
     queryKey: ['tasks', 'my', currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
@@ -172,7 +238,9 @@ export default function HODMyTasks() {
   });
 
   useEffect(() => {
-    setTasks(Array.isArray(tasksData) ? tasksData : []);
+    if (Array.isArray(tasksData)) {
+      setTasks(tasksData);
+    }
   }, [tasksData]);
 
   // fetch users for resolving assignedBy names
@@ -189,7 +257,29 @@ export default function HODMyTasks() {
   useEffect(() => { setUsersState(Array.isArray(usersData) ? usersData : []); }, [usersData]);
 
   // local helper to resolve assignedBy user from fetched users
-  const resolveAssignedByUser = (id: any) => usersState.find((u:any) => (u.id || u._id) == id) || mockUsers.find((u:any) => u.id == id) || null;
+  const resolveAssignedByUser = (id: any) => usersState.find((u: any) => (u.id || u._id) == id) || mockUsers.find((u: any) => u.id == id) || null;
+  // Resolve user-like values (id string, object, or array) to a display object { id, name }
+  const resolveUserDisplay = (userField: any) => {
+    if (!userField) return null;
+    if (Array.isArray(userField)) {
+      const resolved = userField.map(resolveUserDisplay).filter(Boolean) as Array<{ id: any; name: string | null }>;
+      if (!resolved.length) return null;
+      const names = resolved.map(r => r?.name).filter(Boolean).join(', ');
+      return { id: resolved[0]?.id, name: names || resolved[0]?.name };
+    }
+    if (typeof userField === 'object') {
+      const id = userField._id || userField.id || null;
+      const name = userField.name || userField.fullName || ((userField.firstName || '') + ' ' + (userField.lastName || '')).trim() || userField.email || userField.username || null;
+      return { id, name };
+    }
+    if (typeof userField === 'string') {
+      const found = usersState.find((u: any) => String(u.id) === String(userField) || String((u as any)._id) === String(userField)) ||
+        mockUsers.find((m: any) => String(m.id) === String(userField) || String((m as any)._id) === String(userField));
+      if (found) return { id: found.id || (found as any)._id, name: found.name || (found as any).fullName || found.email };
+      return { id: userField, name: userField };
+    }
+    return null;
+  };
 
   // Helper to get a display name for the assignedBy field (handles id, object, and various name properties)
   const getAssignedByName = (assignedBy: any) => {
@@ -248,8 +338,13 @@ export default function HODMyTasks() {
 
   // Get tasks assigned TO the current HOD user
   const myTasks = tasks.filter(t => {
+    const ids: string[] = [];
+    if (Array.isArray((t as any).assignedToList)) {
+      ids.push(...((t as any).assignedToList as any[]).map((a: any) => (typeof a === 'string' ? a : (a && (a.id || a._id)))).filter(Boolean));
+    }
     const assignedToId = typeof t.assignedTo === 'string' ? t.assignedTo : (t.assignedTo && (t.assignedTo.id || t.assignedTo._id));
-    return String(assignedToId) === String(currentUser?.id);
+    if (assignedToId) ids.push(assignedToId);
+    return ids.some(id => String(id) === String(currentUser?.id));
   });
 
   // Get tasks by category
@@ -272,13 +367,13 @@ export default function HODMyTasks() {
   // Filter tasks based on current tab
   const filteredTasks = getCurrentTabTasks().filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+      task.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
-    const matchesAssignedBy = assignedByFilter === 'all' || 
-                             (assignedByFilter === 'super_admin' && task.assignedByRole === 'super_admin') ||
-                             (assignedByFilter === 'admin' && task.assignedByRole === 'admin') ||
-                             (assignedByFilter === 'manager' && task.assignedByRole === 'manager');
+    const matchesAssignedBy = assignedByFilter === 'all' ||
+      (assignedByFilter === 'super_admin' && task.assignedByRole === 'super_admin') ||
+      (assignedByFilter === 'admin' && task.assignedByRole === 'admin') ||
+      (assignedByFilter === 'manager' && task.assignedByRole === 'manager');
 
     return matchesSearch && matchesStatus && matchesPriority && matchesAssignedBy;
   });
@@ -507,17 +602,16 @@ export default function HODMyTasks() {
                   const assignedByUser = resolveAssignedByUser(task.assignedBy);
                   const timeRemaining = getTimeRemaining(task.dueDate);
                   const createdDate = getCreatedDate(task.createdAt);
-                  
+
                   return (
-                    <Card key={task.id} className={`hover:shadow-md transition-shadow ${
-                      task.status === 'completed'
-                        ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
-                        : task.assignedByRole === 'super_admin' 
-                          ? 'border-red-200 dark:border-red-800 bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-950/10 dark:to-orange-950/10' 
-                          : timeRemaining.isOverdue
-                            ? 'border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50/50 to-red-50/50 dark:from-orange-950/10 dark:to-red-950/10'
-                            : ''
-                    }`}>
+                    <Card key={task.id} className={`hover:shadow-md transition-shadow ${task.status === 'completed'
+                      ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
+                      : task.assignedByRole === 'super_admin'
+                        ? 'border-red-200 dark:border-red-800 bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-950/10 dark:to-orange-950/10'
+                        : timeRemaining.isOverdue
+                          ? 'border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50/50 to-red-50/50 dark:from-orange-950/10 dark:to-red-950/10'
+                          : ''
+                      }`}>
                       <CardContent className="p-6">
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
@@ -549,7 +643,7 @@ export default function HODMyTasks() {
                               {task.description}
                             </p>
                           </div>
-                          
+
                           {/* Status Selector */}
                           <div className="flex items-center gap-2 ml-4">
                             {updatingTaskId === String(task.id || task._id) ? (
@@ -576,8 +670,19 @@ export default function HODMyTasks() {
                             {/* Edit button intentionally removed for HOD My Tasks */}
                           </div>
                         </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium">Assigned to:</p>
+                              <p className="text-muted-foreground">
+                                {resolveUserDisplay((task as any).assignedToList && (task as any).assignedToList.length ? (task as any).assignedToList : task.assignedTo)?.name || 'Unassigned'}
+                              </p>
+                            </div>
+                          </div>
+
                           <div className="flex items-center gap-2">
                             <CalendarDays className="h-4 w-4 text-muted-foreground" />
                             <div>
@@ -592,8 +697,8 @@ export default function HODMyTasks() {
                               <p className="font-medium">Due Date:</p>
                               <div className="flex items-center gap-2">
                                 <p className="text-muted-foreground">{normalizeDate(task.dueDate).toLocaleDateString()}</p>
-                                <Badge 
-                                  variant={timeRemaining.isOverdue ? "destructive" : "outline"} 
+                                <Badge
+                                  variant={timeRemaining.isOverdue ? "destructive" : "outline"}
                                   className={`text-xs ${timeRemaining.color}`}
                                 >
                                   {timeRemaining.isOverdue ? '🚨 Overdue' : `⏰ ${timeRemaining.text}`}
@@ -601,7 +706,7 @@ export default function HODMyTasks() {
                               </div>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center gap-2">
                             {getAssignedByIcon(task.assignedByRole)}
                             <div>
@@ -624,21 +729,67 @@ export default function HODMyTasks() {
                               <p className="font-medium text-sm">Attachments ({task.attachments.length})</p>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              {task.attachments.map((attachment) => (
-                                <div
-                                  key={attachment.id}
-                                  className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border text-xs"
-                                >
-                                  <File className="h-3 w-3 text-muted-foreground" />
-                                  <span className="truncate max-w-32">{attachment.name}</span>
-                                  <span className="text-muted-foreground">
-                                    ({Math.round(attachment.size / 1024)}KB)
-                                  </span>
-                                </div>
-                              ))}
+                              {task.attachments.map((raw: any) => {
+                                // Use runtime-safe normalization to ensure absolute URL and mime type
+                                let attachment: any = raw;
+                                try {
+                                  const { normalizeAttachment } = require('@/utils/attachments');
+                                  if (normalizeAttachment) attachment = normalizeAttachment(raw);
+                                } catch { }
+                                return (
+                                  <div
+                                    key={attachment.id}
+                                    className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border text-xs"
+                                  >
+                                    <File className="h-3 w-3 text-muted-foreground" />
+                                    {attachment.type && attachment.type.startsWith('image/') ? (
+                                      <img src={attachment.url} alt={attachment.name} className="h-6 w-6 object-cover rounded" />
+                                    ) : null}
+                                    <a href={attachment.url} target="_blank" rel="noreferrer" className="truncate max-w-32 text-sm text-blue-600 hover:underline">
+                                      {attachment.name}
+                                    </a>
+                                    <span className="text-muted-foreground">
+                                      ({Math.round((attachment.size || 0) / 1024)}KB)
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
+                        <div className="flex items-center justify-between pt-4 border-t mt-4 text-xs text-muted-foreground">
+                          <span>Updated {normalizeDate(task.updatedAt).toLocaleString()}</span>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedTask(task);
+                                setShowTaskDetailsDialog(true);
+                              }}
+                              className="flex items-center gap-1"
+                            >
+                              <Eye className="h-4 w-4" />
+                              View Details
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                const normalizedTask = {
+                                  ...task,
+                                  id: task.id || task._id
+                                };
+                                setDiscussionTask(normalizedTask);
+                                setShowDiscussionDialog(true);
+                              }}
+                              className="flex items-center gap-1"
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                              Team Discuss
+                            </Button>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   );
@@ -674,6 +825,104 @@ export default function HODMyTasks() {
           </CardContent>
         </Card>
       </Tabs>
+
+      <TaskDiscussionDialog
+        open={showDiscussionDialog}
+        task={discussionTask}
+        onClose={() => {
+          setShowDiscussionDialog(false);
+          setDiscussionTask(null);
+        }}
+        currentUserId={currentUser?.id}
+        currentUserRole={currentUser?.role}
+      />
+
+      {/* Task Details Dialog */}
+      <Dialog open={showTaskDetailsDialog} onOpenChange={(open) => {
+        setShowTaskDetailsDialog(open);
+        if (!open) setSelectedTask(null);
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Task Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedTask && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-semibold text-lg">{selectedTask.title}</h3>
+                <p className="text-sm text-muted-foreground mt-1">{selectedTask.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="font-medium text-sm mb-1">Status</p>
+                  <Badge variant={getStatusColor(selectedTask.status)}>
+                    {selectedTask.status.replace('_', ' ')}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="font-medium text-sm mb-1">Priority</p>
+                  <Badge variant={getPriorityColor(selectedTask.priority)}>
+                    {selectedTask.priority}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="font-medium text-sm mb-1">Assigned to</p>
+                  <p className="text-sm">
+                    {resolveUserDisplay((selectedTask as any).assignedToList && (selectedTask as any).assignedToList.length ? (selectedTask as any).assignedToList : selectedTask.assignedTo)?.name || 'Unassigned'}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium text-sm mb-1">Assigned by</p>
+                  <p className="text-sm">{getAssignedByName(selectedTask.assignedBy)}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-sm mb-1">Created</p>
+                  <p className="text-sm">{getCreatedDate(selectedTask.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-sm mb-1">Due Date</p>
+                  <p className="text-sm">{normalizeDate(selectedTask.dueDate).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {selectedTask.attachments && selectedTask.attachments.length > 0 && (
+                <div>
+                  <p className="font-medium text-sm mb-2">Attachments ({selectedTask.attachments.length})</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedTask.attachments.map((raw: any) => {
+                      const attachment = normalizeAttachment(raw);
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border text-xs"
+                        >
+                          <File className="h-3 w-3 text-muted-foreground" />
+                          <a href={attachment.url} target="_blank" rel="noreferrer" className="truncate max-w-32 text-sm text-blue-600 hover:underline">
+                            {attachment.name}
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => {
+                  setShowTaskDetailsDialog(false);
+                  setSelectedTask(null);
+                }}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

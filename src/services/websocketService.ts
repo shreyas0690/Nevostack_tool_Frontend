@@ -17,7 +17,7 @@ class WebSocketService {
       tokenLength: token ? token.length : 0,
       tokenStart: token ? token.substring(0, 20) + '...' : 'none'
     });
-    
+
     this.socket = io('http://localhost:5000', {
       auth: {
         token: token
@@ -28,7 +28,7 @@ class WebSocketService {
     this.socket.on('connect', () => {
       console.log('✅ WebSocket connected');
       this.reconnectAttempts = 0;
-      
+
       // Subscribe to notifications
       this.socket?.emit('subscribe_notifications');
     });
@@ -67,9 +67,9 @@ class WebSocketService {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-      
+
       console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-      
+
       setTimeout(() => {
         const token = localStorage.getItem('accessToken');
         if (token) {

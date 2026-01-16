@@ -95,8 +95,9 @@ export default function HRDepartments() {
           ...dept,
           createdAt: typeof dept.createdAt === 'string' ? dept.createdAt : new Date(dept.createdAt || new Date()).toISOString(),
           updatedAt: typeof dept.updatedAt === 'string' ? dept.updatedAt : new Date(dept.updatedAt || new Date()).toISOString(),
-          // Ensure managerIds exist on frontend department object
-          managerIds: dept.managerIds || []
+          // Ensure member/manager arrays exist on frontend department object
+          managerIds: Array.isArray(dept.managerIds) ? dept.managerIds : [],
+          memberIds: Array.isArray(dept.memberIds) ? dept.memberIds : []
         }));
       } catch (error) {
         console.error('Error fetching departments:', error);
@@ -282,7 +283,7 @@ export default function HRDepartments() {
         memberCount: dept.memberCount || getDepartmentMembers(dept.id).length || 0
       }));
     }
-  }, [departments, users, mockTasks, mockLeaveRequests]);
+  }, [departments, users, allTasks, mockTasks, mockLeaveRequests]);
 
   // Advanced filtering and sorting
   const filteredAndSortedDepartments = useMemo(() => {
@@ -466,10 +467,10 @@ export default function HRDepartments() {
 
   const deleteDepartment = async (deptId: string) => {
     try {
-    const dept = departments.find(d => d.id === deptId);
+      const dept = departments.find(d => d.id === deptId);
       await departmentService.deleteDepartment(deptId);
       await refetchDepartments();
-    toast.success(`${dept?.name} has been successfully deleted!`);
+      toast.success(`${dept?.name} has been successfully deleted!`);
     } catch (error) {
       console.error('Error deleting department:', error);
       toast.error("Failed to delete department. Please try again.");

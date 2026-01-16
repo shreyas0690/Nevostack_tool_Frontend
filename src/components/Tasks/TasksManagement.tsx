@@ -13,12 +13,12 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { 
-  ClipboardList, 
-  Users, 
-  Search, 
-  Plus, 
-  Edit2, 
+import {
+  ClipboardList,
+  Users,
+  Search,
+  Plus,
+  Edit2,
   Trash2,
   MoreVertical,
   Calendar,
@@ -94,10 +94,11 @@ export default function TasksManagement() {
   });
 
   const filteredTasks = tasks.filter(task => {
-    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const searchValue = searchTerm.toLowerCase();
+    const matchesSearch = String(task.title || '').toLowerCase().includes(searchValue) ||
+      String(task.description || '').toLowerCase().includes(searchValue);
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
-    
+
     // Handle department filtering - departmentId can be an object (populated) or string
     let matchesDepartment = true;
     if (departmentFilter !== 'all') {
@@ -111,7 +112,7 @@ export default function TasksManagement() {
         matchesDepartment = task.category === departmentFilter;
       }
     }
-    
+
     return matchesSearch && matchesPriority && matchesDepartment;
   });
 
@@ -130,9 +131,15 @@ export default function TasksManagement() {
     return mockUsers.find(user => user.id === userId);
   };
 
-  // Resolve user-like values (id string or object) to a display object { id, name }
+  // Resolve user-like values (id string, object, or array) to a display object { id, name }
   const resolveUserDisplay = (userField: any) => {
     if (!userField) return null;
+    if (Array.isArray(userField)) {
+      const resolved = userField.map(resolveUserDisplay).filter(Boolean) as Array<{ id: any; name: string | null }>;
+      if (!resolved.length) return null;
+      const names = resolved.map(r => r?.name).filter(Boolean).join(', ');
+      return { id: resolved[0]?.id, name: names || resolved[0]?.name };
+    }
     if (typeof userField === 'object') {
       const id = (userField as any)._id || (userField as any).id || null;
       const name = (userField as any).name || (userField as any).fullName || (((userField as any).firstName || '') + ' ' + ((userField as any).lastName || '')).trim() || (userField as any).email || (userField as any).username || null;
@@ -160,6 +167,58 @@ export default function TasksManagement() {
     const realDept = departmentsData.find(dept => dept.id === deptId);
     if (realDept) return realDept;
     return mockDepartments.find(dept => dept.id === deptId);
+  };
+
+  const getEndOfDay = (date: Date) => (
+    new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+  );
+
+  const resolveDueDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null;
+      if (value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0 && value.getMilliseconds() === 0) {
+        return getEndOfDay(value);
+      }
+      return new Date(value.getTime());
+    }
+
+    if (typeof value === 'string') {
+      const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnlyMatch) {
+        const year = Number(dateOnlyMatch[1]);
+        const month = Number(dateOnlyMatch[2]) - 1;
+        const day = Number(dateOnlyMatch[3]);
+        return new Date(year, month, day, 23, 59, 59, 999);
+      }
+
+      const midnightMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})T00:00(?::00(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/);
+      if (midnightMatch) {
+        const year = Number(midnightMatch[1]);
+        const month = Number(midnightMatch[2]) - 1;
+        const day = Number(midnightMatch[3]);
+        return new Date(year, month, day, 23, 59, 59, 999);
+      }
+
+      const parsed = new Date(value);
+      if (isNaN(parsed.getTime())) return null;
+      if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0 && parsed.getMilliseconds() === 0) {
+        return getEndOfDay(parsed);
+      }
+      return parsed;
+    }
+
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return null;
+    if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0 && parsed.getMilliseconds() === 0) {
+      return getEndOfDay(parsed);
+    }
+    return parsed;
+  };
+
+  const isTaskOverdue = (task: Task) => {
+    const due = resolveDueDate(task.dueDate);
+    return !!due && due.getTime() < Date.now();
   };
 
   const getStatusIcon = (status: string) => {
@@ -258,7 +317,7 @@ export default function TasksManagement() {
     },
     {
       title: 'Overdue',
-      value: tasks.filter(t => new Date(t.dueDate) < new Date() && t.status !== 'completed').length,
+      value: tasks.filter(t => isTaskOverdue(t) && t.status !== 'completed').length,
       icon: AlertCircle,
       color: 'text-red-600'
     }
@@ -305,7 +364,6 @@ export default function TasksManagement() {
             </div>
           </div>
         </div>
-        </div>
       </div>
     );
   }
@@ -338,15 +396,15 @@ export default function TasksManagement() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setShowMeetingDialog(true)}
                   className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-red-300 dark:hover:border-red-600 rounded-lg font-medium transition-all duration-200"
                 >
                   <Users className="w-4 h-4 mr-2" />
                   Schedule Meeting
                 </Button>
-                <Button 
+                <Button
                   onClick={() => setShowAddDialog(true)}
                   className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/25 rounded-lg font-medium transition-all duration-200 hover:scale-105"
                 >
@@ -404,7 +462,7 @@ export default function TasksManagement() {
                   className="pl-10 h-12 rounded-xl border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400"
                 />
               </div>
-              
+
               <Select value={priorityFilter} onValueChange={setPriorityFilter}>
                 <SelectTrigger className="h-12 rounded-xl border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400">
                   <SelectValue placeholder="Filter by priority" />
@@ -427,8 +485,8 @@ export default function TasksManagement() {
                   {departmentsData.map((dept) => (
                     <SelectItem key={dept.id} value={dept.id}>
                       <div className="flex items-center gap-2">
-                        <div 
-                          className="w-3 h-3 rounded-full" 
+                        <div
+                          className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: dept.color || '#6B7280' }}
                         />
                         {dept.name}
@@ -461,16 +519,16 @@ export default function TasksManagement() {
                   <ClipboardList className="h-8 w-8 text-slate-400 dark:text-slate-500" />
                 </div>
                 <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
-                  {searchTerm || priorityFilter !== 'all' || departmentFilter !== 'all' 
-                    ? 'No tasks match your filters' 
+                  {searchTerm || priorityFilter !== 'all' || departmentFilter !== 'all'
+                    ? 'No tasks match your filters'
                     : 'No tasks found'}
                 </h3>
                 <p className="text-slate-600 dark:text-slate-400 text-center mb-6">
-                  {searchTerm || priorityFilter !== 'all' || departmentFilter !== 'all' 
-                    ? 'Try adjusting your search criteria or filters' 
+                  {searchTerm || priorityFilter !== 'all' || departmentFilter !== 'all'
+                    ? 'Try adjusting your search criteria or filters'
                     : 'Get started by creating your first task'}
                 </p>
-                <Button 
+                <Button
                   onClick={() => setShowAddDialog(true)}
                   className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/25 rounded-lg font-medium transition-all duration-200 hover:scale-105"
                 >
@@ -478,315 +536,315 @@ export default function TasksManagement() {
                   Create Task
                 </Button>
               </div>
-        ) : (
-          paginatedTasks.map((task) => {
-            const assignedUserResolved = resolveUserDisplay(task.assignedTo);
-            const assignedByUserResolved = resolveUserDisplay(task.assignedBy);
-            const taskDept = (task as any).departmentId;
-            let taskDeptId;
-            if (taskDept) {
-              // If departmentId is populated (object), use the _id field
-              taskDeptId = typeof taskDept === 'object' ? taskDept._id : taskDept;
-            } else {
-              // Fallback to category if no departmentId
-              taskDeptId = task.category;
-            }
-            const department = getDepartment(taskDeptId);
-            const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'completed' && task.status !== 'cancelled';
-            
-            return (
-              <Card key={task.id} className={`group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-4 hover:shadow-md transition-shadow duration-200 overflow-hidden ${isOverdue ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20' : ''}`}>
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 space-y-3">
+            ) : (
+              paginatedTasks.map((task) => {
+                const assignedUserResolved = resolveUserDisplay((task as any).assignedToList && (task as any).assignedToList.length ? (task as any).assignedToList : task.assignedTo);
+                const assignedByUserResolved = resolveUserDisplay(task.assignedBy);
+                const taskDept = (task as any).departmentId;
+                let taskDeptId;
+                if (taskDept) {
+                  // If departmentId is populated (object), use the _id field
+                  taskDeptId = typeof taskDept === 'object' ? taskDept._id : taskDept;
+                } else {
+                  // Fallback to category if no departmentId
+                  taskDeptId = task.category;
+                }
+                const department = getDepartment(taskDeptId);
+                const isOverdue = isTaskOverdue(task) && task.status !== 'completed' && task.status !== 'cancelled';
+
+                return (
+                  <Card key={task.id} className={`group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-4 hover:shadow-md transition-shadow duration-200 overflow-hidden ${isOverdue ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20' : ''}`}>
+                    <div className="space-y-4">
                       <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-lg flex items-center justify-center">
-                              {getStatusIcon(task.status as any)}
-                            </div>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
-                                {task.title}
-                              </h3>
-                              {isOverdue && (
-                                <Badge variant="destructive" className="text-xs mt-1">
-                                  Overdue
-                                </Badge>
+                              <div className="flex items-center gap-3 mb-2">
+                                <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                                  {getStatusIcon(task.status as any)}
+                                </div>
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
+                                    {task.title}
+                                  </h3>
+                                  {isOverdue && (
+                                    <Badge variant="destructive" className="text-xs mt-1">
+                                      Overdue
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-sm text-slate-600 dark:text-slate-400 ml-11 leading-relaxed">
+                                {task.description}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {/* Delete Button */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedTask(task);
+                                  setShowDeleteDialog(true);
+                                }}
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                                    <MoreVertical className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="bg-background border shadow-md">
+                                  <DropdownMenuItem onClick={() => {
+                                    setSelectedTask(task);
+                                    setShowEditDialog(true);
+                                  }}>
+                                    <Edit2 className="w-4 h-4 mr-2" />
+                                    Edit Task
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => quickUpdateStatus(task.id, 'completed' as any)} disabled={task.status === 'completed'}>
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Mark Complete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-4 text-sm">
+                            <div className="flex items-center gap-2">
+                              <Badge className={getPriorityColor(task.priority)}>
+                                {task.priority}
+                              </Badge>
+                              <Badge variant="outline">
+                                {task.status.replace('_', ' ')}
+                              </Badge>
+                            </div>
+
+                            {department && (
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: department.color }}
+                                />
+                                <span className="text-muted-foreground">{department.name}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm bg-muted/20 p-3 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-blue-600" />
+                              <div>
+                                <span className="text-blue-600 font-medium" style={{ fontSize: '12px' }}>
+                                  Assigned: {new Date(task.createdAt).toLocaleDateString()}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-muted-foreground" />
+                              <div>
+                                <span className={`${isOverdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`} style={{ fontSize: '12px' }}>
+                                  Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {assignedByUserResolved && (
+                              <div className="flex items-center gap-2">
+                                <Avatar className="w-4 h-4">
+                                  <AvatarFallback className="text-xs">
+                                    {(assignedByUserResolved.name || '').charAt(0).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="text-green-600 font-medium" style={{ fontSize: '12px' }}>
+                                    By: {assignedByUserResolved.name}
+                                  </div>
+                                  <div className="text-muted-foreground text-xs">
+                                    {formatAssignedByRole('admin')}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+
+                          <div className="flex items-center justify-between pt-2 border-t">
+                            <div className="flex items-center gap-4">
+                              {assignedUserResolved && (
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="w-6 h-6">
+                                    <AvatarFallback className="text-xs">
+                                      {assignedUserResolved.name.charAt(0).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-sm">
+                                    Assigned to: <span className="font-medium">{assignedUserResolved.name}</span>
+                                  </span>
+                                </div>
+                              )}
+
+                              {assignedByUserResolved && (
+                                <span className="text-xs text-muted-foreground">
+                                  by {assignedByUserResolved.name}
+                                </span>
                               )}
                             </div>
-                          </div>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 ml-11 leading-relaxed">
-                            {task.description}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {/* Delete Button */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedTask(task);
-                              setShowDeleteDialog(true);
-                            }}
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="bg-background border shadow-md">
-                              <DropdownMenuItem onClick={() => {
-                                setSelectedTask(task);
-                                setShowEditDialog(true);
-                              }}>
-                                <Edit2 className="w-4 h-4 mr-2" />
-                                Edit Task
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => quickUpdateStatus(task.id, 'completed' as any)} disabled={task.status === 'completed'}>
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                Mark Complete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-wrap items-center gap-4 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Badge className={getPriorityColor(task.priority)}>
-                            {task.priority}
-                          </Badge>
-                          <Badge variant="outline">
-                            {task.status.replace('_', ' ')}
-                          </Badge>
-                        </div>
-                        
-                        {department && (
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full" 
-                              style={{ backgroundColor: department.color }}
-                            />
-                            <span className="text-muted-foreground">{department.name}</span>
-                          </div>
-                        )}
-                      </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm bg-muted/20 p-3 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-blue-600" />
-                          <div>
-                            <span className="text-blue-600 font-medium" style={{ fontSize: '12px' }}>
-                              Assigned: {new Date(task.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-muted-foreground" />
-                          <div>
-                            <span className={`${isOverdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`} style={{ fontSize: '12px' }}>
-                              Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {assignedByUserResolved && (
-                          <div className="flex items-center gap-2">
-                            <Avatar className="w-4 h-4">
-                              <AvatarFallback className="text-xs">
-                                {(assignedByUserResolved.name || '').charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="text-green-600 font-medium" style={{ fontSize: '12px' }}>
-                                By: {assignedByUserResolved.name}
-                              </div>
-                              <div className="text-muted-foreground text-xs">
-                                {formatAssignedByRole('admin')}
-                              </div>
+                            <div className="flex gap-2">
+                              <Select value={task.status} onValueChange={(value: string) => quickUpdateStatus(task.id, value)}>
+                                <SelectTrigger className="w-32 h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="assigned">Assigned</SelectItem>
+                                  <SelectItem value="in_progress">In Progress</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                  <SelectItem value="blocked">Blocked</SelectItem>
+                                </SelectContent>
+                              </Select>
                             </div>
                           </div>
-                        )}
+                        </div>
                       </div>
-                      
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
 
-                       <div className="flex items-center justify-between pt-2 border-t">
-                         <div className="flex items-center gap-4">
-                           {assignedUserResolved && (
-                             <div className="flex items-center gap-2">
-                               <Avatar className="w-6 h-6">
-                                 <AvatarFallback className="text-xs">
-                                   {assignedUserResolved.name.charAt(0).toUpperCase()}
-                                 </AvatarFallback>
-                               </Avatar>
-                               <span className="text-sm">
-                                 Assigned to: <span className="font-medium">{assignedUserResolved.name}</span>
-                               </span>
-                             </div>
-                           )}
-                           
-                           {assignedByUserResolved && (
-                             <span className="text-xs text-muted-foreground">
-                               by {assignedByUserResolved.name}
-                             </span>
-                           )}
-                         </div>
-                         
-                         <div className="flex gap-2">
-                           <Select value={task.status} onValueChange={(value: string) => quickUpdateStatus(task.id, value)}>
-                             <SelectTrigger className="w-32 h-8">
-                               <SelectValue />
-                             </SelectTrigger>
-                             <SelectContent>
-                               <SelectItem value="assigned">Assigned</SelectItem>
-                               <SelectItem value="in_progress">In Progress</SelectItem>
-                               <SelectItem value="completed">Completed</SelectItem>
-                               <SelectItem value="blocked">Blocked</SelectItem>
-                             </SelectContent>
-                           </Select>
-                         </div>
-                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center mt-6">
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious 
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (currentPage > 1) {
-                      setCurrentPage(currentPage - 1);
-                    }
-                  }}
-                  className={currentPage <= 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                />
-              </PaginationItem>
-              
-              {/* Page Numbers */}
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                // Show first page, last page, current page, and pages around current page
-                const shouldShow = 
-                  page === 1 || 
-                  page === totalPages || 
-                  (page >= currentPage - 1 && page <= currentPage + 1);
-                
-                if (!shouldShow) {
-                  // Show ellipsis for gaps
-                  if (page === currentPage - 2 || page === currentPage + 2) {
-                    return (
-                      <PaginationItem key={page}>
-                        <PaginationEllipsis />
-                      </PaginationItem>
-                    );
-                  }
-                  return null;
-                }
-                
-                return (
-                  <PaginationItem key={page}>
-                    <PaginationLink
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-6">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
                       href="#"
                       onClick={(e) => {
                         e.preventDefault();
-                        setCurrentPage(page);
+                        if (currentPage > 1) {
+                          setCurrentPage(currentPage - 1);
+                        }
                       }}
-                      isActive={currentPage === page}
-                      className="cursor-pointer"
-                    >
-                      {page}
-                    </PaginationLink>
+                      className={currentPage <= 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
                   </PaginationItem>
-                );
-              })}
-              
-              <PaginationItem>
-                <PaginationNext 
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (currentPage < totalPages) {
-                      setCurrentPage(currentPage + 1);
+
+                  {/* Page Numbers */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                    // Show first page, last page, current page, and pages around current page
+                    const shouldShow =
+                      page === 1 ||
+                      page === totalPages ||
+                      (page >= currentPage - 1 && page <= currentPage + 1);
+
+                    if (!shouldShow) {
+                      // Show ellipsis for gaps
+                      if (page === currentPage - 2 || page === currentPage + 2) {
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        );
+                      }
+                      return null;
                     }
-                  }}
-                  className={currentPage >= totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
-        </div>
-      )}
 
-      {/* Dialogs */}
-      <AddTaskDialog
-        open={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-        onAdd={addTask as any}
-        currentUserId="1"
-      />
+                    return (
+                      <PaginationItem key={page}>
+                        <PaginationLink
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setCurrentPage(page);
+                          }}
+                          isActive={currentPage === page}
+                          className="cursor-pointer"
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
 
-      <EditTaskDialog
-        open={showEditDialog}
-        task={selectedTask as any}
-        onClose={() => {
-          setShowEditDialog(false);
-          setSelectedTask(null);
-        }}
-        onSave={editTask as any}
-      />
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (currentPage < totalPages) {
+                          setCurrentPage(currentPage + 1);
+                        }
+                      }}
+                      className={currentPage >= totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the task
-              "{selectedTask?.title}".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setShowDeleteDialog(false);
+          {/* Dialogs */}
+          <AddTaskDialog
+            open={showAddDialog}
+            onClose={() => setShowAddDialog(false)}
+            onAdd={addTask as any}
+            currentUserId="1"
+          />
+
+          <EditTaskDialog
+            open={showEditDialog}
+            task={selectedTask as any}
+            onClose={() => {
+              setShowEditDialog(false);
               setSelectedTask(null);
-            }}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (selectedTask) {
-                  deleteTask(selectedTask.id);
-                }
-                setShowDeleteDialog(false);
-                setSelectedTask(null);
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            }}
+            onSave={editTask as any}
+          />
 
-      <MeetingDialog
-        open={showMeetingDialog}
-        onClose={() => setShowMeetingDialog(false)}
-      />
-    </div>
-  );
+          <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the task
+                  "{selectedTask?.title}".
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => {
+                  setShowDeleteDialog(false);
+                  setSelectedTask(null);
+                }}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (selectedTask) {
+                      deleteTask(selectedTask.id);
+                    }
+                    setShowDeleteDialog(false);
+                    setSelectedTask(null);
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <MeetingDialog
+            open={showMeetingDialog}
+            onClose={() => setShowMeetingDialog(false)}
+          />
+      </div>
+      );
 }

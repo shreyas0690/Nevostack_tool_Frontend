@@ -32,7 +32,8 @@ import {
   Edit3,
   Eye,
   ArrowLeft,
-  ArrowRight
+  ArrowRight,
+  MessageCircle
 } from 'lucide-react';
 import { mockUsers, mockDepartments, mockTasks } from '@/data/mockData';
 import { Task, User, Department, TaskStatus, TaskPriority } from '@/types/company';
@@ -68,6 +69,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/Auth/AuthProvider';
 import MeetingDialog from './MeetingDialog';
 import AssignTaskDialog from './AssignTaskDialog';
+import TaskDiscussionDialog from './TaskDiscussionDialog';
 
 export default function HRTasksManagement() {
   const { currentUser } = useAuth();
@@ -88,6 +90,8 @@ export default function HRTasksManagement() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
+  const [discussionTask, setDiscussionTask] = useState<any>(null);
   const { toast } = useToast();
 
   // Update current time every 1 second for a smooth, stable countdown
@@ -196,13 +200,21 @@ export default function HRTasksManagement() {
   };
 
   const currentTabTasks = getCurrentTabTasks();
+  const searchValue = searchTerm.trim().toLowerCase();
+  const getDepartmentId = (departmentRef: any) => {
+    if (!departmentRef) return null;
+    if (typeof departmentRef === 'string') return departmentRef;
+    return (departmentRef as any).id || (departmentRef as any)._id || null;
+  };
 
   const filteredTasks = currentTabTasks.filter(task => {
-    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const title = (task.title || '').toLowerCase();
+    const description = (task.description || '').toLowerCase();
+    const matchesSearch = !searchValue || title.includes(searchValue) || description.includes(searchValue);
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
-    const matchesDepartment = departmentFilter === 'all' || (task as any).departmentId === departmentFilter;
+    const taskDepartmentId = getDepartmentId((task as any).departmentId);
+    const matchesDepartment = departmentFilter === 'all' || (taskDepartmentId && String(taskDepartmentId) === departmentFilter);
 
     return matchesSearch && matchesStatus && matchesPriority && matchesDepartment;
   });
@@ -225,6 +237,12 @@ export default function HRTasksManagement() {
   // Resolve user-like values (id string or object) to a display object { id, name }
   const resolveUserDisplay = (userField: any) => {
     if (!userField) return null;
+    if (Array.isArray(userField)) {
+      const resolved = userField.map(resolveUserDisplay).filter(Boolean) as Array<{ id: any; name: string | null }>;
+      if (!resolved.length) return null;
+      const names = resolved.map(r => r?.name).filter(Boolean).join(', ');
+      return { id: resolved[0]?.id, name: names || resolved[0]?.name };
+    }
     if (typeof userField === 'object') {
       const id = (userField as any)._id || (userField as any).id || null;
       const name = (userField as any).name || (userField as any).fullName || (((userField as any).firstName || '') + ' ' + ((userField as any).lastName || '')).trim() || (userField as any).email || (userField as any).username || null;
@@ -293,9 +311,12 @@ export default function HRTasksManagement() {
   // Helper functions for admin panel design
   const getTimeRemaining = (dueDate: any) => {
     if (!dueDate) return { text: 'No due date', color: 'text-muted-foreground', isOverdue: false };
-    
+
     const now = currentTime;
-    const due = normalizeDate(dueDate);
+    const due = new Date(dueDate);
+    if (Number.isNaN(due.getTime())) {
+      return { text: 'No due date', color: 'text-muted-foreground', isOverdue: false };
+    }
     const diffMs = due.getTime() - now.getTime();
 
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -344,10 +365,15 @@ export default function HRTasksManagement() {
     return { text, color, isOverdue: false, days, hours, minutes, seconds };
   };
 
-  const getCreatedDate = (createdAt: any) => {
-    if (!createdAt) return 'Unknown';
-    const date = new Date(createdAt);
+  const formatDate = (value: any, fallback: string) => {
+    if (!value) return fallback;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return fallback;
     return date.toLocaleDateString();
+  };
+
+  const getCreatedDate = (createdAt: any) => {
+    return formatDate(createdAt, 'Unknown');
   };
 
   const normalizeDate = (date: any) => {
@@ -392,6 +418,10 @@ export default function HRTasksManagement() {
 
   const getUserDisplayName = (ref: any) => {
     if (!ref) return null;
+    if (Array.isArray(ref)) {
+      const names = ref.map(r => getUserDisplayName(r)).filter(Boolean);
+      return names.join(', ');
+    }
     if (typeof ref === 'string') {
       const user = users.find((u: any) => (u.id || u._id) == ref);
       return user ? ((user as any).name || (user as any).fullName || user.email) : ref;
@@ -602,11 +632,12 @@ export default function HRTasksManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="todo">To Do</SelectItem>
+                  <SelectItem value="assigned">Assigned</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="review">Review</SelectItem>
+                  <SelectItem value="review">Review</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="blocked">Blocked</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -629,11 +660,15 @@ export default function HRTasksManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Departments</SelectItem>
-                {departments.map((dept) => (
-                  <SelectItem key={dept.id} value={dept.id}>
-                    {dept.name}
+                {departments.map((dept) => {
+                  const deptId = (dept as any).id || (dept as any)._id;
+                  if (!deptId) return null;
+                  return (
+                    <SelectItem key={deptId} value={String(deptId)}>
+                      {dept.name}
                     </SelectItem>
-                  ))}
+                  );
+                })}
                 </SelectContent>
               </Select>
 
@@ -701,11 +736,12 @@ export default function HRTasksManagement() {
                 </Card>
         ) : (
           <div className="space-y-4">
-            {paginatedTasks.map((task) => {
-              const assignedUser = resolveUserDisplay(task.assignedTo);
-              const assignedByUser = resolveUserDisplay(task.assignedBy);
+            {paginatedTasks.map((task, index) => {
+            const assignedUser = resolveUserDisplay((task as any).assignedToList && (task as any).assignedToList.length ? (task as any).assignedToList : task.assignedTo);
+            const assignedByUser = resolveUserDisplay(task.assignedBy);
               const timeRemaining = getTimeRemaining(task.dueDate);
               const createdDate = getCreatedDate(task.createdAt);
+              const taskKey = task.id || (task as any)._id || `${task.title || 'task'}-${index}`;
               
               // Get department info
               const taskDeptId = typeof (task as any).departmentId === 'string'
@@ -717,7 +753,7 @@ export default function HRTasksManagement() {
               const departmentColor = departmentObj ? (departmentObj.color || '#6B7280') : '#6B7280';
               
               return (
-                <Card key={task.id} className={`hover:shadow-md transition-shadow ${
+                <Card key={taskKey} className={`hover:shadow-md transition-shadow ${
                   task.status === 'completed'
                     ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
                     : timeRemaining.isOverdue
@@ -817,7 +853,7 @@ export default function HRTasksManagement() {
                         <div>
                           <p className="font-medium">Due Date:</p>
                           <div className="flex items-center gap-1">
-                            <p className="text-muted-foreground">{normalizeDate(task.dueDate).toLocaleDateString()}</p>
+                            <p className="text-muted-foreground">{formatDate(task.dueDate, 'No due date')}</p>
                             {task.status !== 'completed' && activeTab !== 'blocked' && (
                             <Badge
                               variant={timeRemaining.isOverdue ? "destructive" : "outline"}
@@ -856,7 +892,14 @@ export default function HRTasksManagement() {
                           <p className="font-medium text-sm">Attachments ({task.attachments.length})</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {task.attachments.map((attachment: any) => (
+                          {task.attachments.map((raw: any) => {
+                            // Use runtime-safe normalization to ensure absolute URL and mime type
+                            let attachment: any = raw;
+                            try {
+                              const { normalizeAttachment } = require('@/utils/attachments');
+                              if (normalizeAttachment) attachment = normalizeAttachment(raw);
+                            } catch {}
+                            return (
                             <div
                               key={attachment.id}
                               className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-md border text-xs"
@@ -872,7 +915,7 @@ export default function HRTasksManagement() {
                                 ({Math.round((attachment.size || 0) / 1024)}KB)
                               </span>
                             </div>
-                          ))}
+                          );})}
                         </div>
                       </div>
                     )}
@@ -880,9 +923,22 @@ export default function HRTasksManagement() {
                     {/* Footer with Updated and View Details */}
                     <div className="flex items-center justify-between pt-4 border-t mt-4">
                       <div className="text-xs text-muted-foreground">
-                        Updated: {normalizeDate(task.updatedAt).toLocaleDateString()}
+                        Updated: {formatDate(task.updatedAt, 'Unknown')}
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setDiscussionTask(task);
+                            setShowDiscussionDialog(true);
+                          }}
+                          className="flex items-center gap-1"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          <span className="hidden sm:inline">Discussion</span>
+                          <span className="sm:hidden">Chat</span>
+                        </Button>
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button variant="outline" size="sm" onClick={() => setSelectedTask(task)}>
@@ -927,11 +983,11 @@ export default function HRTasksManagement() {
                                   </div>
                                   <div>
                                     <p className="font-medium">Due Date</p>
-                                    <p className="text-sm">{normalizeDate(selectedTask.dueDate).toLocaleDateString()}</p>
+                                    <p className="text-sm">{formatDate(selectedTask.dueDate, 'No due date')}</p>
                                   </div>
                                   <div>
                                     <p className="font-medium">Created</p>
-                                    <p className="text-sm">{normalizeDate(selectedTask.createdAt).toLocaleDateString()}</p>
+                                    <p className="text-sm">{formatDate(selectedTask.createdAt, 'Unknown')}</p>
                                   </div>
                                 </div>
 
@@ -948,7 +1004,7 @@ export default function HRTasksManagement() {
                                           <File className="h-4 w-4 text-muted-foreground" />
                                           <div className="flex-1">
                                             <p className="text-sm font-medium">{attachment.name}</p>
-                                            <p className="text-xs text-muted-foreground">{Math.round((attachment.size || 0) / 1024)}KB • Uploaded {attachment.uploadedAt ? normalizeDate(attachment.uploadedAt).toLocaleDateString() : 'Unknown'}</p>
+                                            <p className="text-xs text-muted-foreground">{Math.round((attachment.size || 0) / 1024)}KB • Uploaded {formatDate(attachment.uploadedAt, 'Unknown')}</p>
                                           </div>
                                         </div>
                                       ))}
@@ -1201,6 +1257,17 @@ export default function HRTasksManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TaskDiscussionDialog
+        open={showDiscussionDialog}
+        task={discussionTask}
+        onClose={() => {
+          setShowDiscussionDialog(false);
+          setDiscussionTask(null);
+        }}
+        currentUserId={currentUser?.id}
+        currentUserRole={currentUser?.role}
+      />
     </div>
   );
 }

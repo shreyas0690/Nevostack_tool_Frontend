@@ -121,32 +121,31 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header 
-        onTabChange={setActiveTab} 
+      <Header
+        onTabChange={setActiveTab}
         onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
         isMobile={isMobile}
       />
-      
+
       {/* Mobile Overlay */}
       {isMobile && sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      
+
       <div className="flex relative">
         {/* Sidebar */}
         <div className={`
-          ${isMobile 
-            ? `fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
-                sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-              }` 
+          ${isMobile
+            ? `fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            }`
             : 'relative'
           }
         `}>
-          <Sidebar 
-            activeTab={activeTab} 
+          <Sidebar
+            activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
               if (isMobile) {
@@ -156,7 +155,7 @@ const Index = () => {
             isMobile={isMobile}
           />
         </div>
-        
+
         {/* Main Content */}
         <main className={`
           flex-1 transition-all duration-300 ease-in-out

@@ -15,6 +15,11 @@ import MeetingsList from './MeetingsList';
 import MeetingsCalendar from './MeetingsCalendar';
 import MeetingStats from './MeetingStats';
 import { CreateMeetingDialog } from './index';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 export default function MeetingsManagement() {
   const { currentUser } = useAuth();
@@ -22,7 +27,10 @@ export default function MeetingsManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [meetingToEdit, setMeetingToEdit] = useState<any | undefined>(undefined);
+
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState<Date | undefined>(undefined);
 
   // Beautiful Loading Component (same as analytics)
   const LoadingSpinner = () => (
@@ -61,12 +69,12 @@ export default function MeetingsManagement() {
         console.log('Attempting to fetch meetings...');
         console.log('Current user:', currentUser);
         console.log('API Base URL:', 'http://localhost:5000/api/meetings');
-        
+
         // Test direct API call first
         try {
           const testResponse = await fetch('http://localhost:5000/api/meetings', {
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
               'Content-Type': 'application/json'
             }
           });
@@ -79,12 +87,12 @@ export default function MeetingsManagement() {
         } catch (directError) {
           console.error('Direct API test failed:', directError);
         }
-        
+
         const response = await meetingService.getMeetings();
         console.log('Fetched meetings response:', response);
         console.log('Response success:', response?.success);
         console.log('Response data:', response?.data);
-        
+
         if (response && response.success && (response.data || (response as any).meetings)) {
           // Support both paginated (`data`) and legacy (`meetings`) response shapes
           const meetingsArray = response.data ?? (response as any).meetings;
@@ -95,7 +103,7 @@ export default function MeetingsManagement() {
             description: meeting.description || '',
             type: 'department' as const, // Default type
             date: new Date(meeting.startTime),
-            duration: meeting.endTime ? 
+            duration: meeting.endTime ?
               Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : 60,
             location: meeting.location || '',
             meetingLink: meeting.meetingLink,
@@ -110,7 +118,7 @@ export default function MeetingsManagement() {
             createdAt: new Date(meeting.createdAt || Date.now()),
             updatedAt: new Date(meeting.updatedAt || Date.now())
           }));
-          
+
           setMeetings(transformedMeetings);
         } else {
           console.warn('Invalid response format:', response);
@@ -136,13 +144,19 @@ export default function MeetingsManagement() {
 
   const filteredMeetings = meetings.filter(meeting => {
     if (!meeting) return false;
-    
+
     const title = meeting.title || '';
     const description = meeting.description || '';
     const query = searchQuery.toLowerCase();
-    
-    return title.toLowerCase().includes(query) || 
-           description.toLowerCase().includes(query);
+
+    const statusMatch = statusFilter === 'all' || meeting.status === statusFilter;
+    const dateMatch = !dateFilter || (
+      meeting.date.getDate() === dateFilter.getDate() &&
+      meeting.date.getMonth() === dateFilter.getMonth() &&
+      meeting.date.getFullYear() === dateFilter.getFullYear()
+    );
+
+    return (title.toLowerCase().includes(query) || description.toLowerCase().includes(query)) && statusMatch && dateMatch;
   });
 
   const refreshMeetings = async () => {
@@ -156,7 +170,7 @@ export default function MeetingsManagement() {
           description: meeting.description || '',
           type: 'department' as const,
           date: new Date(meeting.startTime),
-          duration: meeting.endTime ? 
+          duration: meeting.endTime ?
             Math.round((new Date(meeting.endTime).getTime() - new Date(meeting.startTime).getTime()) / (1000 * 60)) : 60,
           location: meeting.location || '',
           meetingLink: meeting.meetingLink,
@@ -217,7 +231,7 @@ export default function MeetingsManagement() {
                 <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm">Manage and schedule meetings for your team</p>
               </div>
             </div>
-            <Button 
+            <Button
               onClick={() => setShowMeetingDialog(true)}
               className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/25 text-xs sm:text-sm px-3 sm:px-4 py-2"
             >
@@ -246,7 +260,7 @@ export default function MeetingsManagement() {
                   </div>
                   <span className="text-base sm:text-lg">All Meetings</span>
                 </CardTitle>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-3 top-2.5 h-3 w-3 sm:h-4 sm:w-4 text-slate-400" />
                     <Input
@@ -256,6 +270,53 @@ export default function MeetingsManagement() {
                       className="pl-8 sm:pl-10 w-full sm:w-64 border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400 text-sm"
                     />
                   </div>
+
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-full sm:w-[140px] border-slate-200 dark:border-slate-600">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="scheduled">Scheduled</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full sm:w-[140px] justify-start text-left font-normal border-slate-200 dark:border-slate-600",
+                          !dateFilter && "text-muted-foreground"
+                        )}
+                      >
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {dateFilter ? format(dateFilter, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <CalendarComponent
+                        mode="single"
+                        selected={dateFilter}
+                        onSelect={setDateFilter}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {dateFilter && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDateFilter(undefined)}
+                      className="h-9 w-9 text-slate-500 hover:text-red-600"
+                    >
+                      <Plus className="h-4 w-4 rotate-45" />
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>

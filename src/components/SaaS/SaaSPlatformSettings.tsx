@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,9 +34,7 @@ import { saasAuthService } from '@/services/saasAuthService';
 
 export default function SaaSPlatformSettings() {
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState({
+  const defaultSettings = useMemo(() => ({
     // General Settings
     platformName: '',
     platformDomain: '',
@@ -49,7 +47,12 @@ export default function SaaSPlatformSettings() {
 
     // Security Settings
     requireStrongPassword: true
-  });
+  }), []);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [settings, setSettings] = useState(defaultSettings);
+  const [loadedSettings, setLoadedSettings] = useState(defaultSettings);
 
   // Password change form state
   const [passwordForm, setPasswordForm] = useState({
@@ -83,15 +86,27 @@ export default function SaaSPlatformSettings() {
             ...prevSettings,
             ...data.data
           }));
+          setLoadedSettings(prevSettings => ({
+            ...prevSettings,
+            ...data.data
+          }));
         }
       } else {
         const errorData = await response.text();
         console.error('❌ Platform settings fetch error:', errorData);
-        toast.error('Failed to load platform settings');
+        toast({
+          title: 'Failed to load platform settings',
+          description: 'Please try again.',
+          variant: 'destructive'
+        });
       }
     } catch (error) {
       console.error('❌ Error fetching platform settings:', error);
-      toast.error('Network error: Failed to load platform settings');
+      toast({
+        title: 'Network error',
+        description: 'Failed to load platform settings',
+        variant: 'destructive'
+      });
     } finally {
       setLoading(false);
     }
@@ -135,25 +150,38 @@ export default function SaaSPlatformSettings() {
           // Refresh the data to show the latest changes
           await fetchPlatformSettings();
         } else {
-          toast.error('❌ Failed to save platform settings');
+          toast({
+            title: 'Failed to save platform settings',
+            variant: 'destructive'
+          });
         }
       } else {
         const errorData = await response.text();
         console.error('❌ Platform settings save error:', errorData);
-        toast.error('❌ Failed to save platform settings');
+        toast({
+          title: 'Failed to save platform settings',
+          variant: 'destructive'
+        });
       }
     } catch (error) {
       console.error('❌ Error saving platform settings:', error);
-      toast.error('❌ Network error: Failed to save platform settings');
+      toast({
+        title: 'Network error',
+        description: 'Failed to save platform settings',
+        variant: 'destructive'
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const handleReset = () => {
+    setSettings(loadedSettings || defaultSettings);
+    setPasswordForm({ newPassword: '', confirmPassword: '' });
+    setUsernameForm({ newUsername: '', confirmUsername: '' });
     toast({
       title: "Settings Reset",
-      description: "Settings have been reset to default values.",
+      description: "Settings restored to last loaded values.",
     });
   };
 
@@ -220,12 +248,18 @@ export default function SaaSPlatformSettings() {
             confirmPassword: ''
           });
         } else {
-          toast.error(data.message || '❌ Failed to update password');
+          toast({
+            title: data.message || 'Failed to update password',
+            variant: 'destructive'
+          });
         }
       } else {
         const errorData = await response.text();
         console.error('❌ Password change error:', errorData);
-        toast.error('❌ Failed to update password');
+        toast({
+          title: 'Failed to update password',
+          variant: 'destructive'
+        });
       }
     } catch (error) {
       toast({
@@ -301,12 +335,18 @@ export default function SaaSPlatformSettings() {
           // Refresh the settings to get updated user info
           fetchPlatformSettings();
         } else {
-          toast.error(data.message || '❌ Failed to update username');
+          toast({
+            title: data.message || 'Failed to update username',
+            variant: 'destructive'
+          });
         }
       } else {
         const errorData = await response.text();
         console.error('❌ Username change error:', errorData);
-        toast.error('❌ Failed to update username');
+        toast({
+          title: 'Failed to update username',
+          variant: 'destructive'
+        });
       }
     } catch (error) {
       toast({

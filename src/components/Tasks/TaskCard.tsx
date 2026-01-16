@@ -17,7 +17,8 @@ import {
   AlertCircle,
   Target,
   Eye,
-  Paperclip as PaperclipIcon
+  Paperclip as PaperclipIcon,
+  MessageCircle
 } from 'lucide-react';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -29,9 +30,10 @@ type TaskCardProps = {
   updatingTaskId?: string | null;
   departmentMembers?: any[];
   companyUsers?: any[];
+  onDiscuss?: (task: any) => void;
 };
 
-export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departmentMembers = [], companyUsers = [] }: TaskCardProps) {
+export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departmentMembers = [], companyUsers = [], onDiscuss }: TaskCardProps) {
   const [openDetails, setOpenDetails] = useState(false);
 
   const normalizeDate = (d: any) => {
@@ -170,8 +172,19 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
     return null;
   };
 
-  const assignedUserResolved = resolveUserDisplay(task.assignedTo);
+  const assignedUsersArray: any[] = Array.isArray(task.assignedToList)
+    ? task.assignedToList
+    : Array.isArray(task.assignedTo)
+      ? task.assignedTo
+      : task.assignedTo
+        ? [task.assignedTo]
+        : [];
+  const assignedUsersResolved = assignedUsersArray
+    .map((u) => resolveUserDisplay(u))
+    .filter(Boolean) as Array<{ id: any; name: string | null }>;
+  const assignedUserResolved = assignedUsersResolved[0] || resolveUserDisplay(task.assignedTo);
   const assignedByResolved = resolveUserDisplay(task.assignedBy);
+  const assignedNames = assignedUsersResolved.map(u => u.name).filter(Boolean).join(', ');
   const timeRemaining = getTimeRemaining(task.dueDate);
 
   const getCreatedDate = (createdAt: any) => {
@@ -180,15 +193,14 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
   };
 
   return (
-    <Card key={task.id} className={`hover:shadow-md transition-shadow ${
-      task.status === 'completed'
-        ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
-        : task.assignedByRole === 'super_admin'
-          ? 'border-red-200 dark:border-red-800 bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-950/10 dark:to-orange-950/10'
-          : timeRemaining.isOverdue
-            ? 'border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50/50 to-red-50/50 dark:from-orange-950/10 dark:to-red-950/10'
-            : ''
-    }`}>
+    <Card key={task.id} className={`hover:shadow-md transition-shadow ${task.status === 'completed'
+      ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
+      : task.assignedByRole === 'super_admin'
+        ? 'border-red-200 dark:border-red-800 bg-gradient-to-r from-red-50/50 to-orange-50/50 dark:from-red-950/10 dark:to-orange-950/10'
+        : timeRemaining.isOverdue
+          ? 'border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50/50 to-red-50/50 dark:from-orange-950/10 dark:to-red-950/10'
+          : ''
+      }`}>
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
@@ -211,7 +223,7 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
             </div>
             <p className={`text-sm mb-4 ${task.status === 'completed' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>{task.description}</p>
           </div>
-          
+
           <div className="flex items-center gap-2 ml-4">
             {updatingTaskId === String(task.id || task._id) ? (
               <div className="flex items-center gap-2 w-32 px-3 py-2 border rounded-md bg-muted">
@@ -236,22 +248,31 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
             )}
           </div>
         </div>
-        
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-muted-foreground" />
             <div>
               <p className="font-medium">Assigned to:</p>
-              <div className="flex items-center gap-2">
-                <Avatar className="h-6 w-6">
-                  <AvatarFallback className="text-xs">
-                    {(assignedUserResolved && assignedUserResolved.name)
-                      ? assignedUserResolved.name.split(' ').map((n:string) => n[0]).join('')
-                      : 'UN'}
-                  </AvatarFallback>
-                </Avatar>
-                <span>{assignedUserResolved?.name || 'Unassigned'}</span>
-              </div>
+              {assignedUsersResolved.length > 0 ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Avatar className="h-6 w-6">
+                    <AvatarFallback className="text-xs">
+                      {(assignedUsersResolved[0].name || 'UN').split(' ').map((n: string) => n[0]).join('')}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm">
+                    {assignedUsersResolved.map(u => u.name).filter(Boolean).join(', ')}
+                  </span>
+                  {assignedUsersResolved.length > 1 && (
+                    <Badge variant="secondary" className="text-[10px] px-2">
+                      {assignedUsersResolved.length} members
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Unassigned</span>
+              )}
             </div>
           </div>
 
@@ -288,7 +309,7 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
               <div className="flex items-center gap-2">
                 <p className="text-muted-foreground">{assignedByResolved?.name || 'Unknown'}</p>
                 {/* <p className="text-muted-foreground">{getAssignedByName(task.assignedBy) || 'Unknown'}</p> */}
-            
+
                 <Badge className={`text-xs ${getAssignedByColor(task.assignedByRole)}`}>
                   {formatAssignedByRole(task.assignedByRole)}
                 </Badge>
@@ -319,10 +340,10 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
             </div>
           </div>
         )}
-        
+
         <div className="flex items-center justify-between pt-4 border-t mt-4">
           <div className="text-xs text-muted-foreground">
-            Updated: {normalizeDate(task.updatedAt).toLocaleDateString()}
+            Updated: {normalizeDate(task.updatedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()}
           </div>
           <div className="flex items-center gap-2">
             <Dialog open={openDetails} onOpenChange={setOpenDetails}>
@@ -345,7 +366,7 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
                       <h3 className="font-semibold text-lg">{task.title}</h3>
                       <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="font-medium">Status</p>
@@ -361,14 +382,14 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
                       </div>
                       <div>
                         <p className="font-medium">Assigned to</p>
-                        <p className="text-sm">{resolveUserDisplay(task.assignedTo)?.name || 'Unassigned'}</p>
+                        <p className="text-sm">{assignedNames || resolveUserDisplay(task.assignedTo)?.name || 'Unassigned'}</p>
                       </div>
                       <div>
                         <p className="font-medium">Due Date</p>
                         <p className="text-sm">{normalizeDate(task.dueDate).toLocaleDateString()}</p>
                       </div>
                     </div>
-                    
+
                     <div className="flex justify-end">
                       <Button variant="outline" onClick={() => setOpenDetails(false)}>
                         Close
@@ -378,11 +399,20 @@ export default function TaskCard({ task, onUpdateStatus, updatingTaskId, departm
                 )}
               </DialogContent>
             </Dialog>
+            {onDiscuss && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onDiscuss(task)}
+                className="flex items-center gap-1"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Team Discuss
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>
     </Card>
   );
 }
-
-

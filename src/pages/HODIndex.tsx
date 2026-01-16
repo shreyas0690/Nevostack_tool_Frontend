@@ -20,6 +20,7 @@ import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 const HODIndex = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showRakshaBandhanModal, setShowRakshaBandhanModal] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { getSystemBranding } = useTenant();
   const branding = getSystemBranding();
   const { hasFeature, hasAnyFeature } = useFeatureAccess();
@@ -31,6 +32,8 @@ const HODIndex = () => {
     } else {
       setActiveTab(tab);
     }
+    // Close mobile menu on navigation
+    setMobileMenuOpen(false);
   };
 
   // Show Raksha Bandhan modal when HOD logs in
@@ -38,7 +41,7 @@ const HODIndex = () => {
     // Check if modal was already shown today
     const today = new Date().toDateString();
     const lastShown = localStorage.getItem('hod_raksha_bandhan_shown');
-    
+
     if (lastShown !== today) {
       // Show modal after a short delay
       const timer = setTimeout(() => {
@@ -107,10 +110,18 @@ const HODIndex = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <HODHeader onNavigate={setActiveTab} />
+      <HODHeader
+        onNavigate={setActiveTab}
+        onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
+      />
       <div className="flex">
-        <HODSidebar activeTab={activeTab} onTabChange={handleTabChange} />
-        <main className="flex-1 p-6">
+        <HODSidebar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          isOpen={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
+        />
+        <main className="flex-1 p-4 md:p-6 w-full max-w-[100vw] overflow-x-hidden">
           {renderContent()}
         </main>
       </div>

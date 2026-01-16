@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useFeatureAccess, FEATURE_SECTION_MAP, AdminSection } from '@/hooks/useFeatureAccess';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Building2, 
-  ClipboardList, 
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  ClipboardList,
   Calendar,
   CalendarDays,
   BarChart3,
@@ -60,28 +60,28 @@ export default function Sidebar({ activeTab, onTabChange, isMobile = false }: Si
     Object.keys(features).forEach(key => {
       console.log(`  ${key}: ${features[key]} (type: ${typeof features[key]})`);
     });
-    
-        const filtered = menuItems.filter((item) => {
-          const section = item.id as AdminSection;
-          const requiredFeatures = FEATURE_SECTION_MAP[section] || [];
-          
-          console.log(`🔍 Checking section: ${section}`);
-          console.log(`🔍 Required features: ${requiredFeatures}`);
-          
-          // If no features required, always show
-          if (requiredFeatures.length === 0) {
-            console.log(`✅ ${section}: No features required - showing`);
-            return true;
-          }
-          
-          // Check if user has any of the required features
-          const hasAccess = hasAnyFeature(requiredFeatures);
-          console.log(`🔍 ${section}: Has access: ${hasAccess}`);
-          console.log(`🔍 ${section}: Required features check:`, requiredFeatures.map(f => `${f}=${features[f]}`));
-          
-          return hasAccess;
-        });
-    
+
+    const filtered = menuItems.filter((item) => {
+      const section = item.id as AdminSection;
+      const requiredFeatures = FEATURE_SECTION_MAP[section] || [];
+
+      console.log(`🔍 Checking section: ${section}`);
+      console.log(`🔍 Required features: ${requiredFeatures}`);
+
+      // If no features required, always show
+      if (requiredFeatures.length === 0) {
+        console.log(`✅ ${section}: No features required - showing`);
+        return true;
+      }
+
+      // Check if user has any of the required features
+      const hasAccess = hasAnyFeature(requiredFeatures);
+      console.log(`🔍 ${section}: Has access: ${hasAccess}`);
+      console.log(`🔍 ${section}: Required features check:`, requiredFeatures.map(f => `${f}=${features[f]}`));
+
+      return hasAccess;
+    });
+
     console.log('🔍 Visible menu items:', filtered.map(item => item.id));
     console.log('🔍 Hidden menu items:', menuItems.filter(item => !filtered.includes(item)).map(item => item.id));
     return filtered;
@@ -131,12 +131,12 @@ export default function Sidebar({ activeTab, onTabChange, isMobile = false }: Si
           </div>
         </div>
       )}
-      
+
       <nav className="p-2 space-y-1">
         {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-          
+
           return (
             <Button
               key={item.id}
@@ -159,7 +159,7 @@ export default function Sidebar({ activeTab, onTabChange, isMobile = false }: Si
                 )}>
                   <Icon size={20} className="transition-transform duration-200 group-hover:scale-110" />
                 </div>
-                
+
                 {(isMobile || !collapsed) && (
                   <span className={cn(
                     "ml-3 font-medium transition-all duration-200",
@@ -169,7 +169,7 @@ export default function Sidebar({ activeTab, onTabChange, isMobile = false }: Si
                   </span>
                 )}
               </div>
-              
+
               {/* Active indicator */}
               {isActive && (isMobile || !collapsed) && (
                 <div className="absolute right-2 top-1/2 transform -translate-y-1/2">

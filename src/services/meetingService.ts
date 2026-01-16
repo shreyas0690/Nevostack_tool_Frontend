@@ -12,7 +12,7 @@ export interface Meeting {
     email: string;
     role: string;
   };
-  organizerRole: 'admin' | 'department_head' | 'manager' | 'member';
+  organizerRole: 'admin' | 'super_admin' | 'department_head' | 'manager' | 'member' | 'hr' | 'hr_manager';
   company?: {
     id: string;
     name: string;
@@ -28,7 +28,7 @@ export interface Meeting {
     email: string;
     role: string;
   }>;
-  inviteeRoles?: Array<'admin' | 'department_head' | 'manager' | 'member'>;
+  inviteeRoles?: Array<'admin' | 'super_admin' | 'department_head' | 'manager' | 'member' | 'hr' | 'hr_manager'>;
   participants?: Array<{
     user: {
       id: string;
@@ -371,7 +371,6 @@ class MeetingService {
 
 export const meetingService = new MeetingService();
 export default meetingService;
-
 
 
 

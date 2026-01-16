@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calendar as CalendarIcon, Users, Clock, UserCheck, CalendarDays, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, Clock, UserCheck, CalendarDays, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { leaveTypeConfig } from '@/types/leave';
-import { format, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek } from 'date-fns';
+import { format, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, addMonths, subMonths } from 'date-fns';
 import { useState, useEffect } from 'react';
 import { leaveService } from '@/services/leaveService';
 import { useAuth } from '@/components/Auth/AuthProvider';
@@ -12,10 +13,10 @@ export default function LeaveCalendar() {
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewDate, setViewDate] = useState(new Date());
 
-  const currentDate = new Date();
-  const monthStart = startOfMonth(currentDate);
-  const monthEnd = endOfMonth(currentDate);
+  const monthStart = startOfMonth(viewDate);
+  const monthEnd = endOfMonth(viewDate);
   const calendarStart = startOfWeek(monthStart);
   const calendarEnd = endOfWeek(monthEnd);
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
@@ -29,8 +30,8 @@ export default function LeaveCalendar() {
         setError(null);
 
         const response = await leaveService.getMonthlySummary({
-          year: currentDate.getFullYear(),
-          month: currentDate.getMonth() + 1 // JS months are 0-indexed
+          year: viewDate.getFullYear(),
+          month: viewDate.getMonth() + 1 // JS months are 0-indexed
         });
 
         if (response && response.success && response.data) {
@@ -47,7 +48,15 @@ export default function LeaveCalendar() {
     };
 
     loadMonthlySummary();
-  }, [currentDate.getFullYear(), currentDate.getMonth(), currentUser]);
+  }, [viewDate.getFullYear(), viewDate.getMonth(), currentUser]);
+
+  const handlePreviousMonth = () => {
+    setViewDate(prev => subMonths(prev, 1));
+  };
+
+  const handleNextMonth = () => {
+    setViewDate(prev => addMonths(prev, 1));
+  };
 
   const approvedLeaves = monthlySummary?.leaves || [];
 
@@ -68,13 +77,36 @@ export default function LeaveCalendar() {
       <div className="relative">
         <div className="absolute inset-0 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10 dark:to-transparent rounded-xl"></div>
         <div className="relative bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl border border-slate-200/50 dark:border-slate-700/50 p-6">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
-              <CalendarIcon className="h-6 w-6 text-white" />
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25">
+                <CalendarIcon className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Leave Calendar</h2>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">{format(viewDate, 'MMMM yyyy')} - Track employee leave schedules</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Leave Calendar</h2>
-              <p className="text-slate-600 dark:text-slate-400 text-sm">{format(currentDate, 'MMMM yyyy')} - Track employee leave schedules</p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handlePreviousMonth}
+                className="h-9 w-9 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="min-w-[140px] text-center font-semibold text-slate-900 dark:text-slate-100">
+                {format(viewDate, 'MMMM yyyy')}
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleNextMonth}
+                className="h-9 w-9 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
@@ -98,33 +130,32 @@ export default function LeaveCalendar() {
               </div>
             ))}
           </div>
-          
+
           <div className="grid grid-cols-7 gap-2">
             {calendarDays.map((day, index) => {
               const leavesForDay = getLeavesForDay(day);
-              const isCurrentMonth = day.getMonth() === currentDate.getMonth();
-              const isToday = format(day, 'yyyy-MM-dd') === format(currentDate, 'yyyy-MM-dd');
-              
+              const isCurrentMonth = day.getMonth() === viewDate.getMonth();
+              const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+
               return (
-                <div 
+                <div
                   key={index}
-                  className={`min-h-[100px] p-2 border border-slate-200 dark:border-slate-700 rounded-lg ${
-                    !isCurrentMonth ? 'bg-slate-50/50 dark:bg-slate-800/30 text-slate-400 dark:text-slate-500' : 'bg-white dark:bg-slate-800'
-                  } ${isToday ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 shadow-sm' : ''} hover:shadow-sm transition-shadow`}
+                  className={`min-h-[100px] p-2 border border-slate-200 dark:border-slate-700 rounded-lg ${!isCurrentMonth ? 'bg-slate-50/50 dark:bg-slate-800/30 text-slate-400 dark:text-slate-500' : 'bg-white dark:bg-slate-800'
+                    } ${isToday ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 shadow-sm' : ''} hover:shadow-sm transition-shadow`}
                 >
                   <div className={`text-sm font-semibold mb-2 ${isToday ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
                     {format(day, 'd')}
                   </div>
-                  
+
                   <div className="space-y-1">
                     {leavesForDay.slice(0, 2).map(leave => {
                       const config = leaveTypeConfig[leave.leaveType];
                       return (
-                        <div 
+                        <div
                           key={leave.id}
-                          className="text-xs p-1.5 rounded-md text-white truncate font-medium shadow-sm"
+                          className={`text-xs p-1.5 rounded-md text-white truncate font-medium shadow-sm ${leave.status === 'pending' ? 'opacity-75 ring-1 ring-slate-400 border-dashed border-white/50' : ''}`}
                           style={{ backgroundColor: config.color }}
-                          title={`${getEmployeeName(leave.employeeId)} - ${config.label}`}
+                          title={`${getEmployeeName(leave.employeeId)} - ${config.label} (${leave.status})`}
                         >
                           {getEmployeeName(leave.employeeId).split(' ')[0]}
                         </div>

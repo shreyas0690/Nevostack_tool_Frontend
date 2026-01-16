@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,11 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { CalendarIcon, UserPlus, AlertCircle, CheckCircle2, Upload, File, X, Paperclip } from 'lucide-react';
+import { CalendarIcon, UserPlus, AlertCircle, CheckCircle2, Upload, File, X, Paperclip, Users } from 'lucide-react';
 // removed mockUsers fallback to ensure real backend data is used
 import type { User, TaskAttachment } from '@/types/company';
 import { taskService } from '@/services/taskService';
@@ -25,6 +26,7 @@ import { userService } from '@/services/userService';
 import { useQuery } from '@tanstack/react-query';
 import { authService } from '@/services/authService';
 import { mockUsers, mockDepartments } from '@/data/mockData';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface AssignTaskDialogProps {
   open: boolean;
@@ -58,6 +60,8 @@ export default function AssignTaskDialog({
   type LocalAttachment = TaskAttachment & { file?: File };
   const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [assignmentMode, setAssignmentMode] = useState<'single' | 'team'>('single');
+  const [teamAssignees, setTeamAssignees] = useState<string[]>([]);
 
   // decode JWT payload safely to fallback to token payload values
   const decodeTokenPayload = (token?: string) => {
@@ -108,7 +112,6 @@ export default function AssignTaskDialog({
     ? (departmentMembers && departmentMembers.length ? departmentMembers : [])
     : ((fetchedUsers && fetchedUsers.length) ? fetchedUsers : (departmentMembers && departmentMembers.length) ? departmentMembers : mockUsers);
 
-
   // If current user is a manager, restrict visible members to only that manager's reportees
   const visibleMembers: User[] = currentUser?.role === 'manager'
     ? membersSource.filter((m: any) => {
@@ -120,7 +123,21 @@ export default function AssignTaskDialog({
     : membersSource;
 
   // derive selected member details (from visible members so manager only sees reportees)
-  const selectedMember = visibleMembers.find((m: any) => (m.id || m._id) == formData.assignedTo) || null;
+  const getMemberUniqueId = (member: any) => {
+    const raw = member?.id || member?._id || (member?._id && member._id.toString && member._id.toString());
+    return raw ? raw.toString() : '';
+  };
+
+  const findVisibleMemberById = (id: string) => visibleMembers.find((m: any) => getMemberUniqueId(m) === id) || null;
+
+  const selectedMember = assignmentMode === 'single'
+    ? findVisibleMemberById(formData.assignedTo)
+    : null;
+
+  const selectedTeamMembers = useMemo(
+    () => teamAssignees.map(id => findVisibleMemberById(id)).filter(Boolean),
+    [teamAssignees, visibleMembers]
+  );
   
   const getMemberDeptLabel = (member: any) => {
     if (!member) return 'Unknown';
@@ -208,6 +225,15 @@ export default function AssignTaskDialog({
     }
   }, [open, authService.getAccessToken()]);
 
+  useEffect(() => {
+    if (open) {
+      setAssignmentMode('single');
+      setTeamAssignees([]);
+      setFormData(prev => ({ ...prev, assignedTo: '' }));
+      setErrors({});
+    }
+  }, [open]);
+
   // Listen for global login event to refetch users immediately after login
   useEffect(() => {
     const handleGlobalLogin = () => {
@@ -229,8 +255,11 @@ export default function AssignTaskDialog({
       newErrors.description = 'Task description is required';
     }
 
-    if (formData.assigneeType === 'user' && !formData.assignedTo) {
+    if (assignmentMode === 'single' && !formData.assignedTo) {
       newErrors.assignedTo = 'Please select a team member to assign this task';
+    }
+    if (assignmentMode === 'team' && teamAssignees.length === 0) {
+      newErrors.teamMembers = 'Please choose at least one team member';
     }
     if (formData.assigneeType === 'role' && !formData.assignedToRole) {
       newErrors.assignedToRole = 'Please select a role to assign this task';
@@ -259,62 +288,73 @@ export default function AssignTaskDialog({
       setErrors({});
       console.log('AssignTaskDialog: attachments at submit=', attachments.map(a => ({ id: a.id, name: a.name, hasFile: !!(a as any).file })));
 
-      const payload: any = {
+      const basePayload: any = {
         title: formData.title,
         description: formData.description,
         priority: formData.priority,
         status: 'assigned',
-        // If assigning to a user, set departmentId to that user's department if available,
-        // otherwise fallback to the current user's department
-        departmentId: formData.assignedTo ? (getMemberDeptId(selectedMember) || currentUser?.departmentId) : currentUser?.departmentId || undefined,
+        departmentId: currentUser?.departmentId || undefined,
         assigneeType: formData.assigneeType
       };
 
-      if (formData.assigneeType === 'user') {
-        payload.assignedTo = formData.assignedTo;
-        payload.assignedToDepartmentId = getMemberDeptId(selectedMember) || '';
-      }
-      if (formData.assigneeType === 'role') payload.assignedToRole = formData.assignedToRole;
-      if (formData.dueDate) payload.dueDate = formData.dueDate.toISOString();
+      if (formData.assigneeType === 'role') basePayload.assignedToRole = formData.assignedToRole;
+      if (formData.dueDate) basePayload.dueDate = formData.dueDate.toISOString();
 
-      let res;
-      if (attachments.length > 0) {
-        const form = new FormData();
-        Object.entries(payload).forEach(([k, v]) => {
-          if (v !== undefined && v !== null) form.append(k, String(v));
-        });
-        for (const att of attachments) {
-          if (att.file) form.append('files', att.file);
+      const createTaskWithPayload = async (payload: Record<string, any>) => {
+        let res;
+        if (attachments.length > 0) {
+          const form = new FormData();
+          Object.entries(payload).forEach(([k, v]) => {
+            if (v !== undefined && v !== null) form.append(k, String(v));
+          });
+          for (const att of attachments) {
+            if (att.file) form.append('files', att.file);
+          }
+          console.log('AssignTaskDialog: sending multipart create with files count=', attachments.length);
+          res = await taskService.createTask(form as any);
+        } else {
+          res = await taskService.createTask(payload);
         }
-        console.log('AssignTaskDialog: sending multipart create with files count=', attachments.length);
-        res = await taskService.createTask(form as any);
-      } else {
-        res = await taskService.createTask(payload);
-      }
-      const created = res?.data?.task || res?.data || res;
-      const createdId = created?.id || created?._id;
-      if (!createdId) {
-        setErrors({ general: res?.message || 'Failed to create task' });
-        return;
-      }
+        const created = res?.data?.task || res?.data || res;
+        const createdId = created?.id || created?._id;
+        if (!createdId) {
+          throw new Error(res?.message || 'Failed to create task');
+        }
 
-      // If multipart create was used, backend already attached files. Otherwise do separate uploads.
-      if (!(res && res.data && res.data.task && res.data.task.attachments && res.data.task.attachments.length > 0)) {
-        for (const att of attachments) {
-          if (att.file) {
-            try {
-              console.log('AssignTaskDialog: uploading attachment (separate) ', { name: att.name, size: att.size });
-              await taskService.uploadTaskAttachment(createdId, att.file);
-              console.log('AssignTaskDialog: upload finished for', att.name);
-            } catch (uploadErr) {
-              console.error('Attachment upload failed', uploadErr);
+        if (!(res && res.data && res.data.task && res.data.task.attachments && res.data.task.attachments.length > 0)) {
+          for (const att of attachments) {
+            if (att.file) {
+              try {
+                console.log('AssignTaskDialog: uploading attachment (separate) ', { name: att.name, size: att.size });
+                await taskService.uploadTaskAttachment(createdId, att.file);
+                console.log('AssignTaskDialog: upload finished for', att.name);
+              } catch (uploadErr) {
+                console.error('Attachment upload failed', uploadErr);
+              }
             }
           }
         }
-      }
 
-      const full = await taskService.getTaskById(createdId);
-      const taskObj = (full && ((full as any).data?.task || (full as any).data)) || created;
+        const full = await taskService.getTaskById(createdId);
+        return (full && ((full as any).data?.task || (full as any).data)) || created;
+      };
+
+      const assignees = assignmentMode === 'team'
+        ? teamAssignees
+        : (formData.assignedTo ? [formData.assignedTo] : []);
+      const primaryAssigneeId = assignees[0] || formData.assignedTo || null;
+      const primaryAssignee = primaryAssigneeId ? findVisibleMemberById(primaryAssigneeId) : selectedMember;
+      const deptId = getMemberDeptId(primaryAssignee) || currentUser?.departmentId || undefined;
+
+      const payload = {
+        ...basePayload,
+        assignedTo: primaryAssigneeId || undefined,
+        assignedToList: assignees,
+        assignedToDepartmentId: getMemberDeptId(primaryAssignee) || '',
+        departmentId: deptId
+      };
+
+      const taskObj = await createTaskWithPayload(payload);
       onAssignTask(taskObj);
 
       // Reset form (include assignedToDepartmentId)
@@ -328,6 +368,8 @@ export default function AssignTaskDialog({
         assigneeType: 'user',
         assignedToRole: ''
       });
+      setTeamAssignees([]);
+      setAssignmentMode('single');
 
       // Clean up attachments
       attachments.forEach(att => {
@@ -351,6 +393,20 @@ export default function AssignTaskDialog({
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
+  };
+
+  const handleAssignmentModeChange = (mode: 'single' | 'team') => {
+    setAssignmentMode(mode);
+    setErrors(prev => ({ ...prev, assignedTo: '', teamMembers: '' }));
+    if (mode === 'single') {
+      setTeamAssignees([]);
+    } else {
+      setFormData(prev => ({ ...prev, assignedTo: '' }));
+    }
+  };
+
+  const toggleTeamAssignee = (id: string) => {
+    setTeamAssignees(prev => (prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]));
   };
 
   // Handle file selection
@@ -542,62 +598,158 @@ export default function AssignTaskDialog({
           </div>
 
           {/* Assign To */}
-          <div className="space-y-2">
-            <Label>Assign To *</Label>
-            <Select
-              value={formData.assignedTo}
-              onValueChange={(value) => handleInputChange('assignedTo', value)}
-            >
-              <SelectTrigger className={errors.assignedTo ? 'border-red-500' : ''}>
-                <SelectValue placeholder="Select team member..." />
-              </SelectTrigger>
-              <SelectContent>
-                {usersLoading ? (
-                  <SelectItem value="__loading" disabled>Loading users...</SelectItem>
-                ) : visibleMembers.length === 0 ? (
-                  <SelectItem value="__none" disabled>No users found</SelectItem>
-                ) : (
-                  visibleMembers
-                    .filter((member: any) => {
-                      const id = (member.id || member._id || '')?.toString();
-                      if (!id) return false;
-                      return id !== currentUser?.id && (member.isActive ?? true);
-                    })
-                    .map((member: any) => {
-                      const id = (member.id || member._id || (member._id && member._id.toString && member._id.toString()) || '').toString();
-                      const name = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Unknown';
-                      const role = member.role || member.userRole || '';
-                      return (
-                        <SelectItem key={id} value={id}>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-xs">
-                                {name.split(' ').map((n: string) => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                              <p className="font-medium">{name}</p>
-                              <p className="text-xs text-muted-foreground">{role && (role.replace ? role.replace('_', ' ') : role)}</p>
-                        </div>
-                      </div>
-                    </SelectItem>
-                      );
-                    })
-                )}
-              </SelectContent>
-            </Select>
-            {/* show selected user's department below the select */}
-            {selectedMember && (
-              <p className="text-sm text-muted-foreground mt-2">
-                Department: <span className="font-medium">{getMemberDeptLabel(selectedMember)}</span>
-              </p>
-            )}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Task Type</Label>
+              <RadioGroup
+                value={assignmentMode}
+                onValueChange={(value) => handleAssignmentModeChange(value as 'single' | 'team')}
+                className="grid grid-cols-1 md:grid-cols-2 gap-3"
+              >
+                <div className="flex items-center gap-2 rounded-lg border p-3">
+                  <RadioGroupItem value="single" id="single-task" />
+                  <Label htmlFor="single-task" className="flex items-center gap-2 font-medium cursor-pointer">
+                    <UserPlus className="h-4 w-4 text-blue-600" />
+                    Single User Task
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg border p-3">
+                  <RadioGroupItem value="team" id="team-task" />
+                  <Label htmlFor="team-task" className="flex items-center gap-2 font-medium cursor-pointer">
+                    <Users className="h-4 w-4 text-emerald-600" />
+                    Team Task (same task for multiple users)
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
 
-            {errors.assignedTo && (
-              <p className="text-sm text-red-600 flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" />
-                {errors.assignedTo}
-              </p>
+            {assignmentMode === 'single' ? (
+              <div className="space-y-2">
+                <Label>Assign To *</Label>
+                <Select
+                  value={formData.assignedTo}
+                  onValueChange={(value) => handleInputChange('assignedTo', value)}
+                >
+                  <SelectTrigger className={errors.assignedTo ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select team member..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {usersLoading ? (
+                      <SelectItem value="__loading" disabled>Loading users...</SelectItem>
+                    ) : visibleMembers.length === 0 ? (
+                      <SelectItem value="__none" disabled>No users found</SelectItem>
+                    ) : (
+                      visibleMembers
+                        .filter((member: any) => {
+                          const id = getMemberUniqueId(member);
+                          if (!id) return false;
+                          return id !== currentUser?.id && (member.isActive ?? true);
+                        })
+                        .map((member: any) => {
+                          const id = getMemberUniqueId(member);
+                          const name = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Unknown';
+                          const role = member.role || member.userRole || '';
+                          return (
+                            <SelectItem key={id} value={id}>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarFallback className="text-xs">
+                                    {name.split(' ').map((n: string) => n[0]).join('')}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-medium">{name}</p>
+                                  <p className="text-xs text-muted-foreground">{role && (role.replace ? role.replace('_', ' ') : role)}</p>
+                                </div>
+                              </div>
+                            </SelectItem>
+                          );
+                        })
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedMember && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Department: <span className="font-medium">{getMemberDeptLabel(selectedMember)}</span>
+                  </p>
+                )}
+
+                {errors.assignedTo && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.assignedTo}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Select Team Members *</Label>
+                  {teamAssignees.length > 0 && (
+                    <Button variant="ghost" type="button" size="sm" onClick={() => setTeamAssignees([])}>
+                      Clear ({teamAssignees.length})
+                    </Button>
+                  )}
+                </div>
+                <div className={cn(
+                  'border rounded-2xl p-3 space-y-2 max-h-56 overflow-y-auto',
+                  errors.teamMembers ? 'border-red-500' : 'border-muted'
+                )}>
+                  {usersLoading && <p className="text-sm text-muted-foreground">Loading users...</p>}
+                  {!usersLoading && visibleMembers.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No team members available.</p>
+                  )}
+                  {!usersLoading && visibleMembers.length > 0 && visibleMembers.map((member: any) => {
+                    const id = getMemberUniqueId(member);
+                    if (!id || id === currentUser?.id || !(member.isActive ?? true)) return null;
+                    const name = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Unknown';
+                    const role = member.role || member.userRole || '';
+                    const isChecked = teamAssignees.includes(id);
+                    return (
+                      <label
+                        key={id}
+                        className={cn(
+                          'flex items-center justify-between gap-3 rounded-xl border px-3 py-2 cursor-pointer transition',
+                          isChecked ? 'border-emerald-500 bg-emerald-50' : 'border-transparent hover:border-muted'
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={() => toggleTeamAssignee(id)}
+                          />
+                          <div>
+                            <p className="font-medium leading-none">{name}</p>
+                            <p className="text-xs text-muted-foreground capitalize">{role && (role.replace ? role.replace('_', ' ') : role)}</p>
+                          </div>
+                        </div>
+                        <Badge variant="secondary" className="text-[11px]">
+                          {getMemberDeptLabel(member)}
+                        </Badge>
+                      </label>
+                    );
+                  })}
+                </div>
+                {selectedTeamMembers.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedTeamMembers.map(member => {
+                      const id = member ? getMemberUniqueId(member) : '';
+                      const name = member?.name || `${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Member';
+                      return (
+                        <Badge key={id} variant="outline" className="text-xs">
+                          {name}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+                {errors.teamMembers && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.teamMembers}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

@@ -6,18 +6,14 @@ import {
   Target,
   Clock,
   Calendar,
-  Award,
-  TrendingUp,
   CheckCircle,
   AlertCircle,
   Star,
   Trophy,
-  Activity,
   Building2,
   Users,
   Briefcase,
   BarChart3,
-  Coffee,
   Video,
 } from 'lucide-react';
 import { useAuth } from '@/components/Auth/AuthProvider';
@@ -32,7 +28,6 @@ export default function MemberDashboard({ onNavigate }: MemberDashboardProps) {
   const { currentUser } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [dashboardData, setDashboardData] = useState<MemberDashboardData | null>(null);
-  console.log("memberdashboardata", dashboardData);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +40,6 @@ export default function MemberDashboard({ onNavigate }: MemberDashboardProps) {
         setIsLoading(true);
         setError(null);
         const data = await memberService.getDashboard();
-        console.log("agammonnnnnn",data)
         setDashboardData(data);
       } catch (err) {
         console.error('Failed to fetch dashboard data:', err);

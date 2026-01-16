@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useFeatureAccess, FEATURE_SECTION_MAP, AdminSection } from '@/hooks/useFeatureAccess';
-import { 
-  LayoutDashboard, 
-  Building2, 
-  ClipboardList, 
+import {
+  LayoutDashboard,
+  Building2,
+  ClipboardList,
   Calendar,
   BarChart3,
   ChevronLeft,
@@ -45,27 +45,27 @@ export default function HRSidebar({ activeTab, onTabChange }: HRSidebarProps) {
   const getVisibleMenuItems = () => {
     console.log('🔍 HR Sidebar - Current features:', features);
     console.log('🔍 HR Sidebar - All menu items:', menuItems.map(item => item.id));
-    
+
     const filtered = menuItems.filter((item) => {
       const section = item.id as AdminSection;
       const requiredFeatures = FEATURE_SECTION_MAP[section] || [];
-      
+
       console.log(`🔍 HR Sidebar - Checking section: ${section}`);
       console.log(`🔍 HR Sidebar - Required features: ${requiredFeatures}`);
-      
+
       // If no features required, always show
       if (requiredFeatures.length === 0) {
         console.log(`✅ HR Sidebar - ${section}: No features required - showing`);
         return true;
       }
-      
+
       // Check if user has any of the required features
       const hasAccess = hasAnyFeature(requiredFeatures);
       console.log(`🔍 HR Sidebar - ${section}: Has access: ${hasAccess}`);
-      
+
       return hasAccess;
     });
-    
+
     console.log('🔍 HR Sidebar - Visible menu items:', filtered.map(item => item.id));
     console.log('🔍 HR Sidebar - Hidden menu items:', menuItems.filter(item => !filtered.includes(item)).map(item => item.id));
     return filtered;
@@ -98,7 +98,7 @@ export default function HRSidebar({ activeTab, onTabChange }: HRSidebarProps) {
         {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-          
+
           return (
             <Button
               key={item.id}
@@ -121,7 +121,7 @@ export default function HRSidebar({ activeTab, onTabChange }: HRSidebarProps) {
                 )}>
                   <Icon size={20} className="transition-transform duration-200 group-hover:scale-110" />
                 </div>
-                
+
                 {!collapsed && (
                   <span className={cn(
                     "ml-3 font-medium transition-all duration-200",
@@ -131,7 +131,7 @@ export default function HRSidebar({ activeTab, onTabChange }: HRSidebarProps) {
                   </span>
                 )}
               </div>
-              
+
               {/* Active indicator */}
               {isActive && !collapsed && (
                 <div className="absolute right-2 top-1/2 transform -translate-y-1/2">

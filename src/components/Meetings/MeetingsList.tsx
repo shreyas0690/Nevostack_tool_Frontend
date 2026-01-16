@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Calendar, Users, Video, ExternalLink, Edit, Trash2 } from 'lucide-react';
+import { Calendar, Users, Video, ExternalLink, Edit, Trash2, User } from 'lucide-react';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import {
@@ -21,6 +21,7 @@ import { Meeting } from '@/types/meetings';
 import { mockUsers, mockDepartments } from '@/data/mockData';
 import EditMeetingDialog from './EditMeetingDialog';
 import toast from 'react-hot-toast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MeetingsListProps {
   meetings: Meeting[];
@@ -47,16 +48,31 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
   const getUserName = (user: any) => {
     if (!user) return 'Unknown User';
     if (typeof user === 'string') {
-      const u = mockUsers.find(u => u.id === user);
-      return u ? u.name : 'Unknown User';
+      const trimmed = user.trim();
+      if (!trimmed) return 'Unknown User';
+      const isObjectId = /^[0-9a-f]{24}$/i.test(trimmed);
+      if (isObjectId) {
+        const u = mockUsers.find(u => u.id === trimmed);
+        return u ? u.name : 'Unknown User';
+      }
+      return trimmed;
     }
     if (user.name) return user.name;
     if (user.firstName || user.lastName) return `${user.firstName || ''} ${user.lastName || ''}`.trim();
-    if (user.id) {
-      const u = mockUsers.find(u => u.id === user.id);
+    if (user.id || user._id) {
+      const lookupId = user.id || user._id;
+      const u = mockUsers.find(u => u.id === lookupId);
       return u ? u.name : 'Unknown User';
     }
     return 'Unknown User';
+  };
+
+  const getOrganizerName = (organizer: any) => {
+    const name = getUserName(organizer);
+    if (!name) return 'Unknown';
+    const normalized = name.trim();
+    if (!normalized || normalized === 'Unknown User' || normalized.toLowerCase() === 'undefined undefined') return 'Unknown';
+    return normalized;
   };
 
   type DeptLike = string | { _id?: string; id?: string; name?: string };
@@ -91,16 +107,16 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
 
   const handleDeleteMeeting = async () => {
     if (!meetingToDelete) return;
-    
+
     try {
       console.log('🗑️ Attempting to delete meeting:', meetingToDelete.id);
       console.log('🗑️ Meeting data:', meetingToDelete);
-      
+
       await meetingService.deleteMeeting(meetingToDelete.id);
-      
+
       console.log('✅ Meeting deleted successfully');
       toast.success(`Meeting "${meetingToDelete.title}" deleted successfully! 🗑️`);
-      
+
       if (onStatusChange) onStatusChange();
       setShowDeleteDialog(false);
       setMeetingToDelete(null);
@@ -111,7 +127,7 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
         status: error.status,
         response: error.response
       });
-      
+
       // Show error toast
       const errorMessage = error.message || 'Failed to delete meeting. Please try again.';
       toast.error(`Error: ${errorMessage}`);
@@ -141,7 +157,7 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      {paginatedMeetings.map((meeting) => (
+      {paginatedMeetings.map((meeting, index) => (
         <div
           key={meeting.id}
           className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 sm:p-4 hover:shadow-md dark:hover:shadow-slate-900/50 hover:border-slate-300 dark:hover:border-slate-600 transition-all duration-300 group"
@@ -150,12 +166,14 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
           <div className="relative mb-3 sm:mb-4">
             {/* Background Pattern */}
             <div className="absolute inset-0 bg-gradient-to-r from-red-50/50 to-transparent dark:from-red-900/10 dark:to-transparent rounded-lg"></div>
-            
+
             <div className="relative flex flex-col space-y-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0 p-2 sm:p-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-lg border border-slate-200/50 dark:border-slate-700/50">
               <div className="flex-1">
                 <div className="flex items-center gap-2 sm:gap-3 mb-2">
                   <div className="flex items-center gap-2 sm:gap-3">
-                    <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gradient-to-r from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-full shadow-lg shadow-red-500/25"></div>
+                    <div className="w-5 h-5 sm:w-6 sm:h-6 bg-gradient-to-r from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-full shadow-lg shadow-red-500/25 text-[10px] sm:text-xs font-bold text-white flex items-center justify-center">
+                      {startIndex + index + 1}
+                    </div>
                     <div className="w-1 h-6 sm:h-8 bg-gradient-to-b from-red-500 to-transparent dark:from-red-400 dark:to-transparent rounded-full"></div>
                   </div>
                   <div className="flex-1">
@@ -178,14 +196,8 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
                   </div>
                 )}
               </div>
-              
+
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 sm:ml-4">
-                <div className="text-right sm:text-right">
-                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Status</div>
-                  <Badge className={`${getStatusColor(meeting?.status || 'scheduled')} border-0 px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-bold rounded-full shadow-sm`}>
-                    {(meeting?.status || 'scheduled').replace('_', ' ')}
-                  </Badge>
-                </div>
                 <Select value={meeting.status} onValueChange={async (val: any) => {
                   try {
                     await meetingService.updateMeetingStatus(meeting.id, val as any);
@@ -210,24 +222,24 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
           </div>
 
           {/* Meeting Details */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3 sm:mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-3 sm:mb-4">
             <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
               <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center border border-red-100 dark:border-red-800">
                 <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
               </div>
               <div>
                 <div className="font-semibold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">
-                  {meeting?.date ? new Date(meeting.date).toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    month: 'short', 
+                  {meeting?.date ? new Date(meeting.date).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'short',
                     day: 'numeric',
                     year: 'numeric'
                   }) : 'No date'}
                 </div>
                 <div className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm font-medium">
-                  {meeting?.date ? new Date(meeting.date).toLocaleTimeString([], { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                  {meeting?.date ? new Date(meeting.date).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
                   }) : 'No time'}
                 </div>
               </div>
@@ -258,6 +270,20 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
                 </div>
               </div>
             </div>
+
+            <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center border border-red-100 dark:border-red-800">
+                <User className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <div className="font-semibold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">
+                  Organizer
+                </div>
+                <div className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm font-medium">
+                  {getOrganizerName(meeting.organizer)}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Departments */}
@@ -278,8 +304,8 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
 
           {/* Actions */}
           <div className="flex flex-col sm:flex-row justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 transition-all duration-200 px-3 sm:px-4 text-xs sm:text-sm"
               onClick={() => {
@@ -291,8 +317,8 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
               <span className="hidden sm:inline">Edit Meeting</span>
               <span className="sm:hidden">Edit</span>
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               className="border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all duration-200 px-3 sm:px-4 text-xs sm:text-sm"
               onClick={() => {
@@ -304,17 +330,39 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
               <span className="hidden sm:inline">Delete Meeting</span>
               <span className="sm:hidden">Delete</span>
             </Button>
-            <Button 
-              size="sm" 
-              className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 text-white px-4 shadow-sm hover:shadow-md transition-all duration-200"
-              asChild
-            >
-              <a href={meeting.meetingLink || '#'} target="_blank" rel="noopener noreferrer">
-                <Video className="h-4 w-4 mr-2" />
-                Join Meeting
-                <ExternalLink className="h-4 w-4 ml-2" />
-              </a>
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>
+                    <Button
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 text-white px-4 shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!meeting.meetingLink}
+                      asChild={!!meeting.meetingLink}
+                    >
+                      {meeting.meetingLink ? (
+                        <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <Video className="h-4 w-4 mr-2" />
+                          Join Meeting
+                          <ExternalLink className="h-4 w-4 ml-2" />
+                        </a>
+                      ) : (
+                        <span className="flex items-center">
+                          <Video className="h-4 w-4 mr-2" />
+                          Join Meeting
+                          <ExternalLink className="h-4 w-4 ml-2" />
+                        </span>
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {!meeting.meetingLink && (
+                  <TooltipContent>
+                    <p>No meeting link available</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       ))}
@@ -325,30 +373,29 @@ export default function MeetingsList({ meetings, onStatusChange, onEdit }: Meeti
           <Pagination>
             <PaginationContent>
               <PaginationItem>
-                <PaginationPrevious 
+                <PaginationPrevious
                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                   className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'}
                 />
               </PaginationItem>
-              
+
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                 <PaginationItem key={page}>
                   <PaginationLink
                     onClick={() => setCurrentPage(page)}
                     isActive={currentPage === page}
-                    className={`cursor-pointer ${
-                      currentPage === page 
-                        ? 'bg-red-600 text-white hover:bg-red-700' 
-                        : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }`}
+                    className={`cursor-pointer ${currentPage === page
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
                   >
                     {page}
                   </PaginationLink>
                 </PaginationItem>
               ))}
-              
+
               <PaginationItem>
-                <PaginationNext 
+                <PaginationNext
                   onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                   className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800'}
                 />

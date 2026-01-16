@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Clock, CheckCircle, CheckCircle2, AlertCircle, Target, Search as SearchIcon } from 'lucide-react';
+import { Clock, CheckCircle, CheckCircle2, AlertCircle, Target, Search as SearchIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import useHODManagement from '@/hooks/useHODManagement';
 import ManagerTasksManagement from './ManagerTasksManagement';
 
@@ -23,6 +23,8 @@ export default function ManagerMyTasks() {
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [assignedByFilter, setAssignedByFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('recent');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 30000);
@@ -74,7 +76,7 @@ export default function ManagerMyTasks() {
         if (Array.isArray(res)) arr = res;
         else if (Array.isArray(res?.data)) arr = res.data;
         else if (Array.isArray(res?.tasks)) arr = res.tasks;
-        setFetchedTeamTasks(arr.map((t:any) => ({ ...t, id: t.id || t._id })));
+        setFetchedTeamTasks(arr.map((t: any) => ({ ...t, id: t.id || t._id })));
       } catch (e) {
         console.warn('Failed to fetch team tasks', e);
         setFetchedTeamTasks([]);
@@ -106,13 +108,13 @@ export default function ManagerMyTasks() {
     if (hours > 2) return { text: `${hours}h ${minutes}m`, color: 'text-red-500', isOverdue: false };
     if (hours > 0) return { text: `${hours}h ${minutes}m`, color: 'text-red-600', isOverdue: false };
     if (minutes > 0) return { text: `${minutes}m`, color: 'text-red-600', isOverdue: false };
-      return { text: '< 1m', color: 'text-red-600', isOverdue: false };
+    return { text: '< 1m', color: 'text-red-600', isOverdue: false };
   };
 
   const userDeptId = currentUser?.departmentId;
-  const { departmentUsers = [], departmentTasks = [] } = useHODManagement(userDeptId);
+  const { departmentUsers = [] } = useHODManagement(userDeptId);
 
-  const allTasks = Array.isArray(departmentTasks) && departmentTasks.length > 0 ? departmentTasks : tasks;
+  const allTasks = tasks;
 
   const recentTasks = allTasks.filter(t => t.status !== 'completed' && !getTimeRemaining(t.dueDate).isOverdue);
   const completedTasks = allTasks.filter(t => t.status === 'completed');
@@ -135,9 +137,9 @@ export default function ManagerMyTasks() {
   const teamMemberIds = managedIds.length > 0
     ? managedIds.map(String)
     : departmentUsers.filter((u: any) => {
-        const mgr = u.managerId || (u.manager && (u.manager._id || u.manager.id));
-        return String(mgr) === String(currentUser?.id);
-      }).map((m: any) => String(m.id || m._id));
+      const mgr = u.managerId || (u.manager && (u.manager._id || u.manager.id));
+      return String(mgr) === String(currentUser?.id);
+    }).map((m: any) => String(m.id || m._id));
 
   const getAssignedId = (t: any) => {
     if (!t) return null;
@@ -146,9 +148,19 @@ export default function ManagerMyTasks() {
     return null;
   };
 
+  const isTaskForTeamMember = (task: any) => {
+    const ids: string[] = [];
+    if (Array.isArray((task as any).assignedToList)) {
+      ids.push(...((task as any).assignedToList as any[]).map((a: any) => (typeof a === 'string' ? a : (a && (a._id || a.id)))).filter(Boolean));
+    }
+    const single = getAssignedId(task.assignedTo);
+    if (single) ids.push(single);
+    return ids.some(id => teamMemberIds.includes(String(id)));
+  };
+
   const teamTasks = (Array.isArray(fetchedTeamTasks) && fetchedTeamTasks.length > 0)
     ? fetchedTeamTasks
-    : allTasks.filter((t: any) => teamMemberIds.includes(String(getAssignedId(t.assignedTo))));
+    : allTasks.filter((t: any) => isTaskForTeamMember(t));
 
   const getCurrentTabTasks = () => {
     switch (activeTab) {
@@ -167,6 +179,17 @@ export default function ManagerMyTasks() {
     const matchesAssignedBy = assignedByFilter === 'all' || task.assignedByRole === assignedByFilter;
     return matchesSearch && matchesStatus && matchesPriority && matchesAssignedBy;
   });
+
+  // Pagination Logic
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentTasks = filteredTasks.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredTasks.length / itemsPerPage);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, priorityFilter, assignedByFilter, activeTab]);
 
   const stats = [
     { title: 'Recent Tasks', value: recentTasks.length, icon: Clock, color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-950/50', description: 'Active tasks' },
@@ -190,7 +213,7 @@ export default function ManagerMyTasks() {
             <Target className="w-6 h-6 text-white" />
           </div>
         </div>
-        
+
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <h3 className="text-lg font-medium mb-2">Loading My Tasks</h3>
@@ -251,7 +274,7 @@ export default function ManagerMyTasks() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="relative">
                 <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search tasks..." value={searchTerm} onChange={(e:any) => setSearchTerm(e.target.value)} className="pl-8" />
+                <Input placeholder="Search tasks..." value={searchTerm} onChange={(e: any) => setSearchTerm(e.target.value)} className="pl-8" />
               </div>
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -289,10 +312,10 @@ export default function ManagerMyTasks() {
 
             <TabsContent value={activeTab} className="mt-0">
               <div className="space-y-4">
-                {filteredTasks.map(task => (
+                {currentTasks.map(task => (
                   <TaskCard key={task.id} task={task} onUpdateStatus={async (id, status) => {
-                    try { await taskService.updateTaskStatus(id, status as any); refetch(); } catch(e){ console.warn(e); }
-                  }} />
+                    try { await taskService.updateTaskStatus(id, status as any); refetch(); } catch (e) { console.warn(e); }
+                  }} currentUserId={currentUser?.id} currentUserRole={currentUser?.role} />
                 ))}
               </div>
 
@@ -311,6 +334,38 @@ export default function ManagerMyTasks() {
                   <p className="text-muted-foreground">{searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || assignedByFilter !== 'all' ? 'Try adjusting your search filters' : (activeTab === 'recent' ? 'No recent tasks - great job staying on top of things!' : (activeTab === 'completed' ? 'No tasks have been completed yet' : (activeTab === 'overdue' ? 'No overdue tasks - good job!' : 'No blocked tasks')))}</p>
                 </div>
               )}
+
+              {/* Pagination Controls */}
+              {filteredTasks.length > itemsPerPage && (
+                <div className="flex items-center justify-between border-t pt-4 mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredTasks.length)} of {filteredTasks.length} tasks
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <div className="text-sm font-medium">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </TabsContent>
           </CardContent>
         </Card>
@@ -318,5 +373,3 @@ export default function ManagerMyTasks() {
     </div>
   );
 }
-
-

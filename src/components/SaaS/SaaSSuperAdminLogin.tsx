@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Lock, User, Eye, EyeOff, Shield, ArrowLeft } from 'lucide-react';
-import { useAuth } from '../Auth/AuthProvider';
 import { useNavigate } from 'react-router-dom';
+import { saasAuthService } from '@/services/saasAuthService';
 
 export default function SaaSSuperAdminLogin() {
   const [username, setUsername] = useState('');
@@ -14,7 +14,6 @@ export default function SaaSSuperAdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, updateCurrentUser } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -22,78 +21,16 @@ export default function SaaSSuperAdminLogin() {
     setIsLoading(true);
     setError('');
 
-    // Simulate login delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Check for Super Admin credentials directly
-    if (username === 'superadmin@nevostack.com' && password === 'SuperAdmin@2024!') {
-      // Create Super Admin user object
-      const superAdminUser = {
-        id: 'super-admin-001',
-        name: 'SaaS Super Admin',
-        firstName: 'SaaS',
-        lastName: 'Super Admin',
-        email: 'superadmin@nevostack.com',
-        role: 'super_admin',
-        isActive: true,
-        createdAt: new Date(),
-        departmentId: null,
-        companyId: 'saas-platform',
-        avatar: null
-      };
-
-      // Save to SaaS-specific localStorage keys
-      localStorage.setItem('saas_access_token', 'super-admin-token');
-      localStorage.setItem('saas_refresh_token', 'super-admin-refresh-token');
-      localStorage.setItem('saas_user', JSON.stringify(superAdminUser));
-      localStorage.setItem('saas_device', JSON.stringify({
-        id: 'saas-device-001',
-        deviceId: 'saas-device-001',
-        deviceName: 'SaaS Admin Device',
-        deviceType: 'desktop',
-        browser: 'Chrome',
-        os: 'Windows',
-        isTrusted: true
-      }));
-      
-      // Also save to regular auth for compatibility
-      localStorage.setItem('nevostack_auth', 'true');
-      localStorage.setItem('nevostack_user', JSON.stringify(superAdminUser));
-      localStorage.setItem('user', JSON.stringify(superAdminUser));
-      localStorage.setItem('accessToken', 'super-admin-token');
-      localStorage.setItem('refreshToken', 'super-admin-refresh-token');
-      
-      // Update the current user in AuthProvider
-      updateCurrentUser(superAdminUser as any);
-      
-      // Force page reload to trigger App.tsx authentication check
-      setTimeout(() => {
-        window.location.href = '/saas/admin';
-      }, 500);
-    } else {
-      // Try backend authentication as fallback
-      try {
-        const success = await login(username, password);
-        if (success) {
-          // Check if user is authorized for SaaS Super Admin
-          const userRole = localStorage.getItem('userRole');
-          const userEmail = localStorage.getItem('userEmail');
-          
-          if (userRole === 'super_admin' && userEmail === 'superadmin@nevostack.com') {
-            navigate('/saas/admin');
-          } else {
-            setError('Access denied. Only SaaS Super Administrators can access this panel.');
-            // Clear invalid login
-            localStorage.removeItem('token');
-            localStorage.removeItem('userRole');
-            localStorage.removeItem('userEmail');
-          }
-        } else {
-          setError('Invalid username or password. Please check your credentials.');
-        }
-      } catch (error) {
-        setError('Invalid username or password. Please check your credentials.');
+    try {
+      const res = await saasAuthService.login({ email: username.trim(), password });
+      if (res?.user?.role !== 'super_admin') {
+        setError('Access denied. Only SaaS Super Administrators can access this panel.');
+        setIsLoading(false);
+        return;
       }
+      navigate('/saas/admin');
+    } catch (err: any) {
+      setError(err?.message || 'Invalid username or password. Please check your credentials.');
     }
     
     setIsLoading(false);

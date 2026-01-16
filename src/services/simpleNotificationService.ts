@@ -23,9 +23,11 @@ export interface NotificationResponse {
 }
 
 class SimpleNotificationService {
+  private baseUrl = '/api/notifications';
+
   async getNotifications(): Promise<NotificationResponse> {
     try {
-      const response = await apiClient.get('/notifications');
+      const response = await apiClient.get(this.baseUrl);
       return response.data;
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
@@ -35,7 +37,7 @@ class SimpleNotificationService {
 
   async markAsRead(notificationId: string): Promise<void> {
     try {
-      await apiClient.patch(`/notifications/${notificationId}/read`);
+      await apiClient.patch(`${this.baseUrl}/${notificationId}/read`);
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
       throw error;
@@ -44,7 +46,7 @@ class SimpleNotificationService {
 
   async markAllAsRead(): Promise<void> {
     try {
-      await apiClient.patch('/notifications/read-all');
+      await apiClient.patch(`${this.baseUrl}/read-all`);
     } catch (error) {
       console.error('Failed to mark all notifications as read:', error);
       throw error;
@@ -53,7 +55,7 @@ class SimpleNotificationService {
 
   async createTestNotification(): Promise<any> {
     try {
-      const response = await apiClient.post('/notifications/test');
+      const response = await apiClient.post(`${this.baseUrl}/test`);
       return response.data;
     } catch (error) {
       console.error('Failed to create test notification:', error);

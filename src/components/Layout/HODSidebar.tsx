@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useFeatureAccess, FEATURE_SECTION_MAP, AdminSection } from '@/hooks/useFeatureAccess';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Building2, 
-  ClipboardList, 
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  ClipboardList,
   Calendar,
   BarChart3,
   ChevronLeft,
@@ -18,13 +18,16 @@ import {
   Sparkles,
   Shield,
   Activity,
-  TrendingUp
+  TrendingUp,
+  X
 } from 'lucide-react';
 import { useTenant } from '@/components/SaaS/TenantProvider';
 
 interface HODSidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 const menuItems = [
@@ -38,40 +41,34 @@ const menuItems = [
   { id: 'profile', label: 'My Profile', icon: Shield, color: 'text-gray-600' },
 ];
 
-export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) {
+export default function HODSidebar({ activeTab, onTabChange, isOpen = false, onClose }: HODSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { getSystemBranding } = useTenant();
   const branding = getSystemBranding();
   const { features, hasFeature, hasAnyFeature, isLoading } = useFeatureAccess();
 
+  // Close sidebar on tab change on mobile
+  const handleTabClick = (id: string) => {
+    onTabChange(id);
+    if (window.innerWidth < 768 && onClose) {
+      onClose();
+    }
+  };
+
   // Filter menu items based on feature access
   const getVisibleMenuItems = () => {
-    console.log('🔍 HOD Sidebar - Current features:', features);
-    console.log('🔍 HOD Sidebar - All menu items:', menuItems.map(item => item.id));
-    
-    const filtered = menuItems.filter((item) => {
+    return menuItems.filter((item) => {
       const section = item.id as AdminSection;
       const requiredFeatures = FEATURE_SECTION_MAP[section] || [];
-      
-      console.log(`🔍 HOD Sidebar - Checking section: ${section}`);
-      console.log(`🔍 HOD Sidebar - Required features: ${requiredFeatures}`);
-      
+
       // If no features required, always show
       if (requiredFeatures.length === 0) {
-        console.log(`✅ HOD Sidebar - ${section}: No features required - showing`);
         return true;
       }
-      
+
       // Check if user has any of the required features
-      const hasAccess = hasAnyFeature(requiredFeatures);
-      console.log(`🔍 HOD Sidebar - ${section}: Has access: ${hasAccess}`);
-      
-      return hasAccess;
+      return hasAnyFeature(requiredFeatures);
     });
-    
-    console.log('🔍 HOD Sidebar - Visible menu items:', filtered.map(item => item.id));
-    console.log('🔍 HOD Sidebar - Hidden menu items:', menuItems.filter(item => !filtered.includes(item)).map(item => item.id));
-    return filtered;
   };
 
   const visibleMenuItems = getVisibleMenuItems();
@@ -80,7 +77,7 @@ export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) 
   if (isLoading) {
     return (
       <div className={cn(
-        "bg-card border-r border-border h-screen transition-all duration-300 relative",
+        "bg-card border-r border-border h-screen transition-all duration-300 relative hidden md:block",
         collapsed ? "w-16" : "w-64"
       )}>
         <nav className="p-2 space-y-1">
@@ -92,27 +89,31 @@ export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) 
     );
   }
 
-  return (
-    <div className={cn(
-      "bg-card border-r border-border h-screen transition-all duration-300 relative",
-      collapsed ? "w-16" : "w-64"
-    )}>
-      <nav className="p-2 space-y-1">
+  const SidebarContent = () => (
+    <div className="h-full flex flex-col">
+      <div className="p-4 md:hidden flex items-center justify-between border-b border-border mb-2">
+        <span className="font-semibold text-lg">Menu</span>
+        <Button variant="ghost" size="icon" onClick={onClose}>
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
+
+      <nav className="p-2 space-y-1 flex-1 overflow-y-auto">
         {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-          
+
           return (
             <Button
               key={item.id}
               variant="ghost"
               className={cn(
                 "w-full justify-start mb-1 h-12 relative group transition-all duration-200",
-                collapsed && "justify-center px-2",
+                collapsed && "md:justify-center md:px-2",
                 isActive && "bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 shadow-sm",
                 !isActive && "hover:bg-gray-50 dark:hover:bg-gray-800/50"
               )}
-              onClick={() => onTabChange(item.id)}
+              onClick={() => handleTabClick(item.id)}
             >
               <div className={cn(
                 "flex items-center transition-all duration-200",
@@ -124,8 +125,8 @@ export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) 
                 )}>
                   <Icon size={20} className="transition-transform duration-200 group-hover:scale-110" />
                 </div>
-                
-                {!collapsed && (
+
+                {(!collapsed || window.innerWidth < 768) && (
                   <span className={cn(
                     "ml-3 font-medium transition-all duration-200",
                     isActive ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100"
@@ -134,9 +135,9 @@ export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) 
                   </span>
                 )}
               </div>
-              
+
               {/* Active indicator */}
-              {isActive && !collapsed && (
+              {isActive && (!collapsed || window.innerWidth < 768) && (
                 <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                 </div>
@@ -146,8 +147,8 @@ export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) 
         })}
       </nav>
 
-      {/* Collapse/Expand Button at Bottom Right */}
-      <div className="absolute bottom-4 right-4">
+      {/* Collapse/Expand Button at Bottom Right (Desktop only) */}
+      <div className="hidden md:block absolute bottom-4 right-4">
         <Button
           variant="ghost"
           size="sm"
@@ -159,5 +160,31 @@ export default function HODSidebar({ activeTab, onTabChange }: HODSidebarProps) 
         </Button>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Sidebar Container */}
+      <div className={cn(
+        "bg-card border-r border-border h-screen transition-all duration-300 z-50",
+        // Mobile Styles (Default: Fixed Drawer)
+        "fixed inset-y-0 left-0 w-64 shadow-2xl transform transition-transform duration-300 ease-in-out z-50",
+        isOpen ? "translate-x-0" : "-translate-x-full",
+
+        // Desktop Styles (Override Mobile: Sticky Sidebar)
+        "md:translate-x-0 md:transform-none md:sticky md:top-20 md:shadow-none md:block md:z-30 md:h-[calc(100vh-5rem)]",
+        collapsed ? "md:w-16" : "md:w-64"
+      )}>
+        <SidebarContent />
+      </div>
+    </>
   );
 }

@@ -5,6 +5,15 @@ export interface ManagerDashboardData {
   teamMembers: number;
   teamTasks: number;
   completionRate: number;
+  taskCounts?: {
+    total: number;
+    completed: number;
+    inProgress: number;
+    assigned: number;
+    urgent: number;
+    overdue: number;
+    active: number;
+  };
   urgent: {
     count: number;
     tasks: Task[];
@@ -31,6 +40,7 @@ export interface TeamMemberStats {
     total: number;
     completed: number;
     inProgress: number;
+    assigned?: number;
     urgent: number;
     overdue: number;
     completionRate: number;
@@ -201,7 +211,7 @@ class ManagerService {
 
   // Update team member status
   async updateTeamMemberStatus(
-    memberId: string, 
+    memberId: string,
     isActive: boolean
   ): Promise<ApiResponse<TeamMemberUpdateResponse>> {
     return apiService.put<TeamMemberUpdateResponse>(
@@ -326,7 +336,7 @@ export interface PerformanceMetric {
 
 // Get team members from backend
 export async function getTeamMembers(): Promise<ApiResponse<any[]>> {
-  return apiService.get('/manager/team-members');
+  return apiService.get(API_CONFIG.ENDPOINTS.MANAGER.TEAM_MEMBERS);
 }
 
 

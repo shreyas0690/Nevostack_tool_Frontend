@@ -81,7 +81,8 @@ export interface Task {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
-  assignedTo: string;
+  assignedTo: string | string[] | any;
+  assignedToList?: Array<string | { id?: string; _id?: string; name?: string; fullName?: string; email?: string }>;
   assignedBy: string;
   assignedByRole?: UserRole; // Track the role of who assigned the task
   departmentId: string;

@@ -1,10 +1,11 @@
 import { API_CONFIG, ApiResponse, HTTP_STATUS, ERROR_MESSAGES } from '@/config/api';
 import { User, Department, Task } from '@/types/company';
 import { mockUsers, mockTasks, mockDepartments } from '@/data/mockData';
+import authService from '@/services/authService';
 
 // API Helper function with error handling
 async function apiRequest<T>(
-  endpoint: string, 
+  endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
   // Fallback: if mock backend is enabled, return deterministic mock data for endpoints used by the dashboard
@@ -42,54 +43,75 @@ async function apiRequest<T>(
       // Default empty object
       return { success: true, data: {} as any } as any;
     }
-  } catch {}
+  } catch { }
   try {
-    // Try multiple token sources
-    const token = localStorage.getItem('accessToken') || 
-                  localStorage.getItem('authToken') || 
-                  localStorage.getItem('token');
-    
-    console.log('Making API request to:', `${API_CONFIG.BASE_URL}${endpoint}`);
-    console.log('Using token:', token ? `${token.substring(0, 10)}...` : 'No token');
-    
-    const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        ...API_CONFIG.DEFAULT_HEADERS,
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options.headers,
-      },
-      timeout: API_CONFIG.TIMEOUT,
-    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Try multiple token sources
+      const token = authService.getAccessToken()
+        || localStorage.getItem('authToken')
+        || localStorage.getItem('token');
 
-    console.log('API Response status:', response.status);
-    
-    // Handle non-JSON responses
-    let data;
-    try {
-      data = await response.json();
-      console.log('API Response data:', data);
-    } catch (parseError) {
-      console.error('Failed to parse JSON response:', parseError);
-      if (response.ok) {
-        return { success: true };
+      console.log('Making API request to:', `${API_CONFIG.BASE_URL}${endpoint}`);
+      console.log('Using token:', token ? `${token.substring(0, 10)}...` : 'No token');
+
+      const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          ...API_CONFIG.DEFAULT_HEADERS,
+          ...(token && { Authorization: `Bearer ${token}` }),
+          ...options.headers,
+        },
+        timeout: API_CONFIG.TIMEOUT,
+      });
+
+      console.log('API Response status:', response.status);
+
+      if (response.status === 401 && attempt === 0) {
+        const refreshToken = authService.getRefreshToken();
+        if (refreshToken) {
+          try {
+            await authService.refreshToken();
+            continue;
+          } catch (refreshError) {
+            try {
+              await authService.logout();
+            } catch (logoutError) {
+              console.warn('Logout after refresh failure failed:', logoutError);
+            }
+            throw refreshError;
+          }
+        }
       }
-      throw new Error(ERROR_MESSAGES.SERVER_ERROR);
+
+      // Handle non-JSON responses
+      let data;
+      try {
+        data = await response.json();
+        console.log('API Response data:', data);
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError);
+        if (response.ok) {
+          return { success: true };
+        }
+        throw new Error(ERROR_MESSAGES.SERVER_ERROR);
+      }
+
+      if (!response.ok) {
+        console.error('API Error Response:', data);
+        // Handle specific error cases
+        if (response.status === 403) {
+          throw new Error('Access denied. Please check your permissions.');
+        }
+        if (response.status === 401) {
+          throw new Error('Authentication required. Please login again.');
+        }
+        throw new Error(data.message || data.error || ERROR_MESSAGES.SERVER_ERROR);
+      }
+
+      return data;
     }
 
-    if (!response.ok) {
-      console.error('API Error Response:', data);
-      // Handle specific error cases
-      if (response.status === 403) {
-        throw new Error('Access denied. Please check your permissions.');
-      }
-      if (response.status === 401) {
-        throw new Error('Authentication required. Please login again.');
-      }
-      throw new Error(data.message || data.error || ERROR_MESSAGES.SERVER_ERROR);
-    }
-
-    return data;
+    throw new Error('Authentication required. Please login again.');
   } catch (error) {
     console.error('API Request Error:', error);
     return {
@@ -108,26 +130,26 @@ export const hodService = {
       const response = await apiRequest<any>(
         `/api/departments/${departmentId}/employees?includeHierarchy=true`
       );
-      
+
       console.log('Department employees response:', response);
-      
+
       if (response && response.success && response.data) {
         // Transform backend hierarchy response to flat user array
         const { hierarchy, allEmployees } = response.data;
-        
+
         if (allEmployees && Array.isArray(allEmployees)) {
           return {
             success: true,
             data: allEmployees
           };
         }
-        
+
         // Fallback: combine hierarchy data
         const users = [];
         if (hierarchy.departmentHead) users.push(hierarchy.departmentHead);
         if (hierarchy.managers) users.push(...hierarchy.managers);
         if (hierarchy.members) users.push(...hierarchy.members);
-        
+
         return {
           success: true,
           data: users
@@ -137,10 +159,10 @@ export const hodService = {
       console.warn('Department users API did not return data, falling back to mockUsers');
       console.log('Filtering mock users for department:', departmentId);
       console.log('Available mock users:', mockUsers.map(u => ({ id: u.id, name: u.name, departmentId: u.departmentId })));
-      
+
       const fallback = mockUsers.filter(u => String(u.departmentId) === String(departmentId));
       console.log('Filtered mock users for department:', fallback.length, fallback.map(u => ({ id: u.id, name: u.name, role: u.role })));
-      
+
       return { success: true, data: fallback } as ApiResponse<User[]>;
     } catch (error) {
       console.error('getDepartmentUsers error:', error);
@@ -154,13 +176,13 @@ export const hodService = {
   async getDepartmentDetails(departmentId: string): Promise<ApiResponse<Department>> {
     try {
       console.log('Fetching department details for:', departmentId);
-      
+
       const response = await apiRequest<any>(
         API_CONFIG.ENDPOINTS.DEPARTMENTS.BY_ID(departmentId)
       );
-      
+
       console.log('Department details response:', response);
-      
+
       if (response && response.success && response.data) {
         // Transform backend response to frontend format
         const department: Department = {
@@ -176,7 +198,7 @@ export const hodService = {
           createdAt: response.data.createdAt,
           updatedAt: response.data.updatedAt
         };
-        
+
         return {
           success: true,
           data: department
@@ -197,7 +219,7 @@ export const hodService = {
 
   // Get team members with task analytics (new method)
   async getTeamMembersWithTasks(
-    departmentId?: string, 
+    departmentId?: string,
     timeRange: string = '30d',
     searchTerm: string = '',
     roleFilter: string = 'all',
@@ -273,27 +295,27 @@ export const hodService = {
   }>> {
     try {
       console.log('Fetching team members with tasks for department:', departmentId, 'timeRange:', timeRange);
-      
+
       const params = new URLSearchParams();
       if (departmentId) params.append('departmentId', departmentId);
       params.append('timeRange', timeRange);
       if (searchTerm) params.append('searchTerm', searchTerm);
       if (roleFilter !== 'all') params.append('roleFilter', roleFilter);
       if (statusFilter !== 'all') params.append('statusFilter', statusFilter);
-      
+
       const response = await apiRequest<any>(
         `/api/analytics/hod/team/members-with-tasks?${params.toString()}`
       );
-      
+
       console.log('Team members with tasks response:', response);
-      
+
       if (response && response.success && response.data) {
         return {
           success: true,
           data: response.data
         };
       }
-      
+
       // Fallback to mock data
       console.warn('Team members with tasks API did not return data, using fallback');
       return {
@@ -487,24 +509,24 @@ export const hodService = {
   }>> {
     try {
       console.log('Fetching team overview for department:', departmentId, 'timeRange:', timeRange);
-      
+
       const params = new URLSearchParams();
       if (departmentId) params.append('departmentId', departmentId);
       params.append('timeRange', timeRange);
-      
+
       const response = await apiRequest<any>(
         `/api/analytics/hod/team/overview?${params.toString()}`
       );
-      
+
       console.log('Team overview response:', response);
-      
+
       if (response && response.success && response.data) {
         return {
           success: true,
           data: response.data
         };
       }
-      
+
       // Fallback to mock data
       console.warn('Team overview API did not return data, using fallback');
       return {
@@ -645,20 +667,20 @@ export const hodService = {
   }>> {
     try {
       console.log('Fetching department hierarchy for:', departmentId);
-      
+
       const response = await apiRequest<any>(
         `/api/departments/${departmentId}/employees?includeHierarchy=true`
       );
-      
+
       console.log('Department hierarchy response:', response);
-      
+
       if (response.success && response.data?.hierarchy) {
         return {
           success: true,
           data: response.data.hierarchy
         };
       }
-      
+
       return response;
     } catch (error) {
       console.error('getDepartmentHierarchy error:', error);
@@ -673,7 +695,7 @@ export const hodService = {
   async getDepartmentAnalytics(departmentId: string): Promise<ApiResponse<any>> {
     try {
       const response = await apiRequest<any>(
-        `/departments/${departmentId}/analytics`
+        `/api/departments/${departmentId}/analytics`
       );
 
       if (response.success && response.data) {
@@ -744,13 +766,13 @@ export const hodService = {
   },
 
   async updateTeamMember(
-    userId: string, 
+    userId: string,
     userData: {
       name: string;
       email: string;
-      role: 'manager' | 'member';
+      role?: 'manager' | 'member';
       managerId?: string;
-      isActive: boolean;
+      isActive?: boolean;
     }
   ): Promise<ApiResponse<User>> {
     return apiRequest<User>(API_CONFIG.ENDPOINTS.USERS.PROFILE(userId), {
@@ -826,7 +848,7 @@ export const hodService = {
   },
 
   async updateTaskStatus(
-    taskId: string, 
+    taskId: string,
     status: 'assigned' | 'in_progress' | 'completed' | 'blocked'
   ): Promise<ApiResponse<Task>> {
     return apiRequest<Task>(API_CONFIG.ENDPOINTS.TASKS.STATUS(taskId), {
@@ -851,10 +873,10 @@ export const hodService = {
 
   // Bulk operations for department management
   async bulkUpdateUsers(
-    userIds: string[], 
-    updates: { 
-      managerId?: string; 
-      isActive?: boolean; 
+    userIds: string[],
+    updates: {
+      managerId?: string;
+      isActive?: boolean;
       role?: 'manager' | 'member';
     }
   ): Promise<ApiResponse<User[]>> {
@@ -1050,7 +1072,7 @@ export const hodService = {
       console.log('Fetching user tasks for user:', userId);
 
       const response = await apiRequest<any>(
-        `/analytics/hod/user/tasks/${userId}`
+        `/api/analytics/hod/user/tasks/${userId}`
       );
 
       console.log('User tasks response:', response);
@@ -1074,7 +1096,11 @@ export const hodService = {
             role: 'employee'
           },
           tasks: {
-            active: mockTasks.filter(t => ['in_progress', 'assigned', 'pending'].includes(t.status)).map(t => ({
+            active: mockTasks.filter(t => {
+              const isStatusActive = ['in_progress', 'assigned', 'pending'].includes(t.status);
+              const isOverdue = new Date(t.dueDate) < new Date() && !['completed', 'blocked'].includes(t.status);
+              return isStatusActive && !isOverdue;
+            }).map(t => ({
               id: t.id,
               title: t.title,
               description: t.description,
@@ -1211,7 +1237,11 @@ export const hodService = {
           },
           stats: {
             total: mockTasks.length,
-            active: mockTasks.filter(t => ['in_progress', 'assigned', 'pending'].includes(t.status)).length,
+            active: mockTasks.filter(t => {
+              const isStatusActive = ['in_progress', 'assigned', 'pending'].includes(t.status);
+              const isOverdue = new Date(t.dueDate) < new Date() && !['completed', 'blocked'].includes(t.status);
+              return isStatusActive && !isOverdue;
+            }).length,
             completed: mockTasks.filter(t => t.status === 'completed').length,
             blocked: mockTasks.filter(t => t.status === 'blocked').length,
             overdue: mockTasks.filter(t => {
@@ -1236,4 +1266,3 @@ export const hodService = {
 };
 
 export default hodService;
-

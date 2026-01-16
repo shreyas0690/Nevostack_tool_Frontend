@@ -209,12 +209,27 @@ class ApiService {
       console.error('Error reading stored tokens:', error);
       this.clearStoredTokens();
     }
+    try {
+      const accessToken = localStorage.getItem('accessToken');
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (accessToken && refreshToken) {
+        return {
+          accessToken,
+          refreshToken,
+          expiresAt: Date.now() + (15 * 60 * 1000)
+        };
+      }
+    } catch (error) {
+      console.error('Error reading legacy tokens:', error);
+    }
     return null;
   }
 
   private storeTokens(tokens: TokenData) {
     try {
       localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+      localStorage.setItem('accessToken', tokens.accessToken);
+      localStorage.setItem('refreshToken', tokens.refreshToken);
     } catch (error) {
       console.error('Error storing tokens:', error);
     }
@@ -223,6 +238,8 @@ class ApiService {
   private clearStoredTokens() {
     try {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
     } catch (error) {
       console.error('Error clearing tokens:', error);
     }

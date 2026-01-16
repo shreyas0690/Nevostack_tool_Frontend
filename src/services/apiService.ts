@@ -26,11 +26,11 @@ class ApiService {
     endpoint = endpoint ?? '';
     if (endpoint && !endpoint.startsWith('/')) endpoint = `/${endpoint}`;
     const url = `${this.baseURL}${endpoint}`;
-    
+
     // Prepare headers
-    const headers = {
+    const headers: Record<string, string> = {
       ...this.defaultHeaders,
-      ...fetchOptions.headers,
+      ...fetchOptions.headers as Record<string, string>,
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
       'Expires': '0'
@@ -39,12 +39,6 @@ class ApiService {
     // If body is FormData, remove Content-Type so browser sets boundary automatically
     if (fetchOptions && fetchOptions.body instanceof FormData) {
       if (headers['Content-Type']) delete headers['Content-Type'];
-    }
-
-    // Add auth token if available
-    const token = authService.getAccessToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
     }
 
     const requestConfig: RequestInit = {
@@ -60,12 +54,21 @@ class ApiService {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+        const token = authService.getAccessToken();
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        } else {
+          delete headers.Authorization;
+        }
+
         const response = await fetch(url, {
           ...requestConfig,
           signal: controller.signal
         });
 
         clearTimeout(timeoutId);
+
+
 
         // Handle HTTP errors
         if (!response.ok) {
@@ -80,7 +83,7 @@ class ApiService {
 
       } catch (error) {
         lastError = error as Error;
-        
+
         // Don't retry on certain errors
         if (this.shouldNotRetry(error as Error)) {
           throw this.createApiError((error as Error) || new Error(ERROR_MESSAGES.UNKNOWN));
@@ -99,7 +102,7 @@ class ApiService {
   // Handle HTTP errors
   private async handleHttpError(response: Response): Promise<void> {
     let errorData: ApiError;
-    
+
     try {
       // Use a clone so callers can still read the original body if needed
       errorData = await response.clone().json();
@@ -142,23 +145,23 @@ class ApiService {
           // Let the auth provider handle the state change instead of reloading
         }
         break;
-        
+
       case HTTP_STATUS.FORBIDDEN:
         errorData.error = ERROR_MESSAGES.FORBIDDEN;
         break;
-        
+
       case HTTP_STATUS.NOT_FOUND:
         errorData.error = ERROR_MESSAGES.NOT_FOUND;
         break;
-        
+
       case HTTP_STATUS.UNPROCESSABLE_ENTITY:
         errorData.error = ERROR_MESSAGES.VALIDATION_ERROR;
         break;
-        
+
       case HTTP_STATUS.TOO_MANY_REQUESTS:
         errorData.error = 'Too many requests. Please wait and try again.';
         break;
-        
+
       case HTTP_STATUS.INTERNAL_SERVER_ERROR:
       case HTTP_STATUS.SERVICE_UNAVAILABLE:
         errorData.error = ERROR_MESSAGES.SERVER_ERROR;
@@ -174,12 +177,12 @@ class ApiService {
     if (error.message.includes('401') || error.message.includes('403')) {
       return true;
     }
-    
+
     // Don't retry on validation errors
     if (error.message.includes('400') || error.message.includes('422')) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -257,7 +260,7 @@ class ApiService {
   async upload<T>(endpoint: string, file: File, data?: Record<string, any>): Promise<ApiResponse<T>> {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     if (data) {
       Object.entries(data).forEach(([key, value]) => {
         formData.append(key, value);
@@ -278,7 +281,7 @@ class ApiService {
   async downloadFile(endpoint: string, filename?: string): Promise<Blob> {
     const token = authService.getAccessToken();
     const headers: Record<string, string> = {};
-    
+
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -292,7 +295,7 @@ class ApiService {
     }
 
     const blob = await response.blob();
-    
+
     // If filename provided, trigger download
     if (filename) {
       const url = window.URL.createObjectURL(blob);
@@ -310,7 +313,7 @@ class ApiService {
 
   // Paginated request method
   async getPaginated<T>(
-    endpoint: string, 
+    endpoint: string,
     params: {
       page?: number;
       limit?: number;
@@ -321,7 +324,7 @@ class ApiService {
     } = {}
   ): Promise<ApiResponse<T[]>> {
     const searchParams = new URLSearchParams();
-    
+
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         if (key === 'filters' && typeof value === 'object') {

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -13,8 +12,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, subMonths } from 'date-fns';
-import { mockUsers, mockDepartments, mockTasks } from '@/data/mockData';
-import { mockLeaveRequests } from '@/data/leaveData';
 import { toast } from '@/hooks/use-toast';
 import { reportsService, type OverviewReport, type TasksReport, type DepartmentsReport, type UsersReport, type LeaveReport } from '@/services/reportsService';
 import { useAuth } from '@/components/Auth/AuthProvider';
@@ -27,64 +24,23 @@ export default function ReportsManagement() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [reportData, setReportData] = useState<OverviewReport | TasksReport | DepartmentsReport | UsersReport | LeaveReport | null>(null);
 
-  // Debug function to test fallback data generation
-  const checkIfDataIsEmpty = (data: any, category: string): boolean => {
-    if (!data) return true;
-
-    switch (category) {
-      case 'tasks':
-        return !data.total || data.total === 0;
-      case 'departments':
-        return !data.departments || data.departments.length === 0;
-      case 'users':
-        return !data.users || data.users.length === 0;
-      case 'leave':
-        return !data.summary || data.summary.total === 0;
-      case 'overview':
-        return (!data.tasks || data.tasks.total === 0) &&
-               (!data.departments || data.departments.length === 0) &&
-               (!data.users || data.users.length === 0) &&
-               (!data.leave || data.leave.total === 0);
-      default:
-        return true;
-    }
-  };
+  // New state for explicit date range
+  const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
+    start: startOfMonth(new Date()),
+    end: endOfMonth(new Date())
+  });
 
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Load report data when component mounts or parameters change
+  // Load report data when filters change
   useEffect(() => {
     generateReportData();
-  }, [selectedDate, reportType]);
-
-  // Load report data when category changes
-  useEffect(() => {
-    console.log('📊 Report category changed to:', reportCategory);
-    generateReportData();
-  }, [reportCategory]);
+  }, [dateRange, reportCategory, reportType, currentUser?.companyId]);
 
   // Component mounted
   useEffect(() => {
     console.log('🚀 ReportsManagement component mounted');
-
-    // If no data is loaded after initial attempt, force fallback
-    setTimeout(() => {
-      if (!reportData) {
-        console.log('⚠️ No data loaded, forcing fallback...');
-        const fallbackData = generateFallbackData();
-        setReportData(fallbackData);
-      }
-    }, 2000);
   }, []);
-
-  // Force fallback data if reportData remains null after loading attempts
-  useEffect(() => {
-    if (!reportData && !isLoadingData) {
-      console.log('⚠️ No report data available, auto-loading fallback...');
-      const fallbackData = generateFallbackData();
-      setReportData(fallbackData);
-    }
-  }, [reportData, isLoadingData, reportCategory]);
 
   const reportCategories = [
     { id: 'overview', label: 'Overview Report', icon: BarChart3, description: 'Complete company overview with all metrics' },
@@ -114,6 +70,7 @@ export default function ReportsManagement() {
       case 'lastMonth':
         return { start: startOfMonth(subMonths(now, 1)), end: endOfMonth(subMonths(now, 1)) };
       case 'last3Months':
+        // Return range from 3 months ago to NOW (covering the last 3 months)
         return { start: startOfMonth(subMonths(now, 2)), end: endOfMonth(now) };
       default:
         return { start: now, end: now };
@@ -123,9 +80,8 @@ export default function ReportsManagement() {
   const generateReportData = async () => {
     try {
       setIsLoadingData(true);
-    const range = reportType === 'weekly' 
-      ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
-      : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+      // Use the explicit dateRange state
+      const range = dateRange;
 
       console.log('📊 Generating report data for category:', reportCategory);
       console.log('📅 Date range:', range);
@@ -139,7 +95,8 @@ export default function ReportsManagement() {
           data = await reportsService.generateOverviewReport(
             reportType,
             range.start.toISOString(),
-            range.end.toISOString()
+            range.end.toISOString(),
+            currentUser?.companyId
           );
           console.log('📊 Overview data received:', data);
           break;
@@ -148,7 +105,8 @@ export default function ReportsManagement() {
           data = await reportsService.generateTasksReport(
             reportType,
             range.start.toISOString(),
-            range.end.toISOString()
+            range.end.toISOString(),
+            currentUser?.companyId
           );
           console.log('📋 Tasks data received:', data);
           break;
@@ -157,7 +115,8 @@ export default function ReportsManagement() {
           data = await reportsService.generateDepartmentsReport(
             reportType,
             range.start.toISOString(),
-            range.end.toISOString()
+            range.end.toISOString(),
+            currentUser?.companyId
           );
           console.log('🏢 Departments data received:', data);
           break;
@@ -166,7 +125,8 @@ export default function ReportsManagement() {
           data = await reportsService.generateUsersReport(
             reportType,
             range.start.toISOString(),
-            range.end.toISOString()
+            range.end.toISOString(),
+            currentUser?.companyId
           );
           console.log('👥 Users data received:', data);
           break;
@@ -175,7 +135,8 @@ export default function ReportsManagement() {
           data = await reportsService.generateLeaveReport(
             reportType,
             range.start.toISOString(),
-            range.end.toISOString()
+            range.end.toISOString(),
+            currentUser?.companyId
           );
           console.log('📅 Leave data received:', data);
           break;
@@ -184,7 +145,8 @@ export default function ReportsManagement() {
           data = await reportsService.generateOverviewReport(
             reportType,
             range.start.toISOString(),
-            range.end.toISOString()
+            range.end.toISOString(),
+            currentUser?.companyId
           );
           console.log('📊 Default overview data received:', data);
       }
@@ -206,368 +168,19 @@ export default function ReportsManagement() {
         variant: "destructive",
       });
 
-      // Only use fallback for overview report, others should show error
-      if (reportCategory === 'overview') {
-        console.log('🔄 Generating fallback data for overview report...');
-        const fallbackData = generateFallbackData();
-        setReportData(fallbackData);
-        return fallbackData;
-      } else {
-        // For other reports, show empty state instead of mock data
-        setReportData(null);
-        return null;
-      }
+      // Show empty state - no mock data
+      setReportData(null);
+      return null;
     } finally {
       setIsLoadingData(false);
     }
   };
 
-  const generateFallbackData = () => {
-    const range = reportType === 'weekly'
-      ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
-      : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
-
-    switch (reportCategory) {
-      case 'overview':
-        return generateOverviewFallbackData();
-      case 'tasks':
-        return generateTasksFallbackData();
-      case 'departments':
-        return generateDepartmentsFallbackData();
-      case 'users':
-        return generateUsersFallbackData();
-      case 'leave':
-        return generateLeaveFallbackData();
-      default:
-        return generateOverviewFallbackData();
-    }
-  };
-
-  const generateOverviewFallbackData = (): OverviewReport => {
-    // Tasks data
-    const tasksData = {
-      total: mockTasks.length,
-      completed: mockTasks.filter(t => t.status === 'completed').length,
-      inProgress: mockTasks.filter(t => t.status === 'in_progress').length,
-      assigned: mockTasks.filter(t => t.status === 'assigned').length,
-      blocked: mockTasks.filter(t => t.status === 'blocked').length,
-      byPriority: {
-        urgent: mockTasks.filter(t => t.priority === 'urgent').length,
-        high: mockTasks.filter(t => t.priority === 'high').length,
-        medium: mockTasks.filter(t => t.priority === 'medium').length,
-        low: mockTasks.filter(t => t.priority === 'low').length,
-      }
-    };
-
-    // Departments data
-    const departmentsData = mockDepartments.map(dept => {
-      const deptTasks = mockTasks.filter(t => t.departmentId === dept.id);
-      const completedTasks = deptTasks.filter(t => t.status === 'completed').length;
-      return {
-        name: dept.name,
-        totalTasks: deptTasks.length,
-        completedTasks,
-        completionRate: deptTasks.length > 0 ? Math.round((completedTasks / deptTasks.length) * 100) : 0,
-        members: dept.memberCount
-      };
-    });
-
-    // Users data
-    const usersData = mockUsers.map(user => {
-      const userTasks = mockTasks.filter(t => t.assignedTo === user.id);
-      const completedTasks = userTasks.filter(t => t.status === 'completed').length;
-      return {
-        name: user.name,
-        email: user.email,
-        department: mockDepartments.find(d => d.id === user.departmentId)?.name || 'No Department',
-        totalTasks: userTasks.length,
-        completedTasks,
-        completionRate: userTasks.length > 0 ? Math.round((completedTasks / userTasks.length) * 100) : 0
-      };
-    });
-
-    // Leave data
-    const leaveData = {
-      total: mockLeaveRequests.length,
-      approved: mockLeaveRequests.filter(l => l.status === 'approved').length,
-      pending: mockLeaveRequests.filter(l => l.status === 'pending').length,
-      rejected: mockLeaveRequests.filter(l => l.status === 'rejected').length,
-      cancelled: mockLeaveRequests.filter(l => l.status === 'cancelled').length,
-      byType: {
-        annual: mockLeaveRequests.filter(l => l.leaveType === 'annual').length,
-        sick: mockLeaveRequests.filter(l => l.leaveType === 'sick').length,
-        compensatory: mockLeaveRequests.filter(l => l.leaveType === 'compensatory').length,
-        emergency: mockLeaveRequests.filter(l => l.leaveType === 'emergency').length,
-      }
-    };
-
-    return {
-      tasks: tasksData,
-      departments: departmentsData,
-      users: usersData,
-      leave: leaveData
-    };
-  };
-
-  const generateTasksFallbackData = (): TasksReport => {
-    console.log('🔄 Generating Tasks fallback data...');
-    console.log('📊 Mock tasks count:', mockTasks.length);
-    console.log('📋 Sample tasks:', mockTasks.slice(0, 3).map(t => ({ id: t.id, status: t.status, priority: t.priority })));
-
-    const total = mockTasks.length;
-    const completed = mockTasks.filter(t => t.status === 'completed').length;
-    const inProgress = mockTasks.filter(t => t.status === 'in_progress').length;
-    const assigned = mockTasks.filter(t => t.status === 'assigned').length;
-    const blocked = mockTasks.filter(t => t.status === 'blocked').length;
-
-    console.log('📈 Tasks status breakdown:', { total, completed, inProgress, assigned, blocked });
-
-    // Double-check with manual counting
-    let manualCompleted = 0, manualInProgress = 0, manualAssigned = 0, manualBlocked = 0;
-    mockTasks.forEach(task => {
-      switch (task.status) {
-        case 'completed': manualCompleted++; break;
-        case 'in_progress': manualInProgress++; break;
-        case 'assigned': manualAssigned++; break;
-        case 'blocked': manualBlocked++; break;
-      }
-    });
-    console.log('🔍 Manual count verification:', { manualCompleted, manualInProgress, manualAssigned, manualBlocked });
-
-    // Top performers based on completed tasks
-    const topPerformers = mockUsers
-      .map(user => {
-        const userTasks = mockTasks.filter(t => t.assignedTo === user.id);
-        const completedTasks = userTasks.filter(t => t.status === 'completed').length;
-        return {
-          userId: user.id,
-          userName: user.name,
-          userEmail: user.email,
-          totalTasks: userTasks.length,
-          completedTasks,
-          completionRate: userTasks.length > 0 ? Math.round((completedTasks / userTasks.length) * 100) : 0
-        };
-      })
-      .sort((a, b) => b.completedTasks - a.completedTasks)
-      .slice(0, 5);
-
-    console.log('🏆 Top performers:', topPerformers);
-
-    const result = {
-      total,
-      byStatus: {
-        completed,
-        inProgress,
-        assigned,
-        blocked
-      },
-      byPriority: {
-        urgent: mockTasks.filter(t => t.priority === 'urgent').length,
-        high: mockTasks.filter(t => t.priority === 'high').length,
-        medium: mockTasks.filter(t => t.priority === 'medium').length,
-        low: mockTasks.filter(t => t.priority === 'low').length
-      },
-      topPerformers
-    };
-
-    console.log('✅ Tasks fallback data generated:', result);
-    return result;
-  };
-
-  const generateDepartmentsFallbackData = (): DepartmentsReport => {
-    console.log('🔄 Generating Departments fallback data...');
-    console.log('🏢 Mock departments count:', mockDepartments.length);
-
-    const departments = mockDepartments.map(dept => {
-      const deptTasks = mockTasks.filter(t => t.departmentId === dept.id);
-      const completedTasks = deptTasks.filter(t => t.status === 'completed').length;
-      const inProgressTasks = deptTasks.filter(t => t.status === 'in_progress').length;
-      const pendingTasks = deptTasks.filter(t => t.status === 'assigned' || t.status === 'blocked').length;
-      const members = dept.memberCount;
-      const activeMembers = Math.floor(members * 0.8); // Assume 80% are active
-
-      return {
-        name: dept.name,
-        description: dept.description || `Department for ${dept.name}`,
-        totalTasks: deptTasks.length,
-        completedTasks,
-        inProgressTasks,
-        pendingTasks,
-        members,
-        activeMembers,
-        completionRate: deptTasks.length > 0 ? Math.round((completedTasks / deptTasks.length) * 100) : 0,
-        productivity: members > 0 ? Math.round((completedTasks / members) * 100) : 0
-      };
-    });
-
-    const totalMembers = departments.reduce((sum, dept) => sum + dept.members, 0);
-    const totalTasks = departments.reduce((sum, dept) => sum + dept.totalTasks, 0);
-    const totalCompleted = departments.reduce((sum, dept) => sum + dept.completedTasks, 0);
-
-    const result = {
-      departments,
-      summary: {
-        totalDepartments: departments.length,
-        totalMembers,
-        totalTasks,
-        totalCompleted,
-        averageCompletionRate: departments.length > 0
-          ? Math.round(departments.reduce((sum, dept) => sum + dept.completionRate, 0) / departments.length)
-          : 0
-      }
-    };
-
-    console.log('✅ Departments fallback data generated:', result);
-    return result;
-  };
-
-  const generateUsersFallbackData = (): UsersReport => {
-    console.log('🔄 Generating Users fallback data...');
-    console.log('👥 Mock users count:', mockUsers.length);
-
-    const users = mockUsers.map(user => {
-      const userTasks = mockTasks.filter(t => t.assignedTo === user.id);
-      const completedTasks = userTasks.filter(t => t.status === 'completed').length;
-      const inProgressTasks = userTasks.filter(t => t.status === 'in_progress').length;
-      const overdueTasks = userTasks.filter(t =>
-        (t.status === 'in_progress' || t.status === 'assigned') &&
-        new Date(t.dueDate) < new Date()
-      ).length;
-
-      return {
-        userId: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        department: mockDepartments.find(d => d.id === user.departmentId)?.name || 'No Department',
-        totalTasks: userTasks.length,
-        completedTasks,
-        inProgressTasks,
-        overdueTasks,
-        completionRate: userTasks.length > 0 ? Math.round((completedTasks / userTasks.length) * 100) : 0
-      };
-    });
-
-    const totalUsers = users.length;
-    const activeUsers = users.filter(u => u.isActive).length;
-    const totalTasks = users.reduce((sum, u) => sum + u.totalTasks, 0);
-    const totalCompleted = users.reduce((sum, u) => sum + u.completedTasks, 0);
-
-    const result = {
-      users,
-      summary: {
-        totalUsers,
-        activeUsers,
-        totalTasks,
-        totalCompleted,
-        averageCompletionRate: users.length > 0
-          ? Math.round(users.reduce((sum, u) => sum + u.completionRate, 0) / users.length)
-          : 0,
-        usersWithTasks: users.filter(u => u.totalTasks > 0).length
-      }
-    };
-
-    console.log('✅ Users fallback data generated:', result);
-    return result;
-  };
-
-  const generateLeaveFallbackData = (): LeaveReport => {
-    console.log('🔄 Generating Leave fallback data...');
-    console.log('📅 Mock leave requests count:', mockLeaveRequests.length);
-
-    const total = mockLeaveRequests.length;
-    const approved = mockLeaveRequests.filter(l => l.status === 'approved').length;
-    const pending = mockLeaveRequests.filter(l => l.status === 'pending').length;
-    const rejected = mockLeaveRequests.filter(l => l.status === 'rejected').length;
-    const cancelled = mockLeaveRequests.filter(l => l.status === 'cancelled').length;
-    const totalDays = mockLeaveRequests.reduce((sum, l) => sum + l.totalDays, 0);
-
-    // Group by month
-    const byMonth = mockLeaveRequests.reduce((acc, leave) => {
-      const month = new Date(leave.startDate).toISOString().substring(0, 7); // YYYY-MM
-      if (!acc[month]) {
-        acc[month] = { count: 0, totalDays: 0 };
-      }
-      acc[month].count++;
-      acc[month].totalDays += leave.totalDays;
-      return acc;
-    }, {} as Record<string, { count: number; totalDays: number }>);
-
-    // Top users by leave days
-    const topUsers = mockUsers
-      .map(user => {
-        const userLeaves = mockLeaveRequests.filter(l => l.employeeId === user.id);
-        const totalLeaveDays = userLeaves.reduce((sum, l) => sum + l.totalDays, 0);
-        return {
-          userId: user.id,
-          userName: user.name,
-          userEmail: user.email,
-          department: mockDepartments.find(d => d.id === user.departmentId)?.name || 'No Department',
-          totalLeaveDays,
-          leaveRequests: userLeaves.length
-        };
-      })
-      .sort((a, b) => b.totalLeaveDays - a.totalLeaveDays)
-      .slice(0, 5);
-
-    // Recent leave requests
-    const recentRequests = mockLeaveRequests
-      .sort((a, b) => new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime())
-      .slice(0, 10)
-      .map(leave => {
-        const user = mockUsers.find(u => u.id === leave.employeeId);
-        return {
-          id: leave.id,
-          type: leave.leaveType,
-          status: leave.status,
-          startDate: leave.startDate.toISOString(),
-          endDate: leave.endDate.toISOString(),
-          days: leave.totalDays,
-          reason: leave.reason,
-          createdAt: leave.appliedDate.toISOString(),
-          employee: user ? {
-            id: user.id,
-            name: user.name,
-            email: user.email
-          } : null
-        };
-      });
-
-    const result = {
-      summary: {
-        total,
-        approved,
-        pending,
-        rejected,
-        cancelled,
-        totalDays
-      },
-      byType: {
-        annual: mockLeaveRequests.filter(l => l.leaveType === 'annual').length,
-        sick: mockLeaveRequests.filter(l => l.leaveType === 'sick').length,
-        compensatory: mockLeaveRequests.filter(l => l.leaveType === 'compensatory').length,
-        emergency: mockLeaveRequests.filter(l => l.leaveType === 'emergency').length
-      },
-      byMonth: Object.entries(byMonth).map(([month, data]) => ({
-        date: month,
-        count: data.count,
-        totalDays: data.totalDays
-      })),
-      topUsers,
-      recentRequests
-    };
-
-    console.log('✅ Leave fallback data generated:', result);
-    return result;
-  };
-
   const downloadReport = async (fileFormat: 'json' | 'csv' | 'pdf') => {
     setIsGenerating(true);
     try {
-      const range = reportType === 'weekly'
-        ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
-        : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+      // Use the explicit dateRange state
+      const range = dateRange;
 
       await reportsService.downloadReport({
         reportType,
@@ -632,341 +245,139 @@ export default function ReportsManagement() {
     }
   };
 
-  const renderFallbackStats = () => {
-    switch (reportCategory) {
-      case 'overview':
-        return renderOverviewFallbackStats();
-      case 'tasks':
-        return renderTasksFallbackStats();
-      case 'departments':
-        return renderDepartmentsFallbackStats();
-      case 'users':
-        return renderUsersFallbackStats();
-      case 'leave':
-        return renderLeaveFallbackStats();
-      default:
-        return renderOverviewFallbackStats();
-    }
+  const StatCard = ({ label, value, variant = 'default', icon: Icon }: { label: string, value: string | number, variant?: 'default' | 'outline' | 'secondary' | 'destructive', icon?: any }) => {
+    const accentClass = variant === 'secondary'
+      ? 'bg-blue-500/70'
+      : variant === 'destructive'
+      ? 'bg-red-500/70'
+      : variant === 'outline'
+      ? 'bg-slate-400/60'
+      : 'bg-red-500/70';
+
+    return (
+      <div className={cn(
+        "relative overflow-hidden p-4 rounded-xl border transition-all duration-200 flex flex-col items-start gap-3 group shadow-sm hover:shadow-md hover:-translate-y-0.5 h-full",
+        variant === 'default' && "bg-white/90 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700",
+        variant === 'secondary' && "bg-blue-50/40 dark:bg-blue-900/10 border-blue-100 dark:border-blue-800/70",
+        variant === 'destructive' && "bg-red-50/40 dark:bg-red-900/10 border-red-100 dark:border-red-800/70",
+        variant === 'outline' && "bg-slate-50/60 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700"
+      )}>
+        <div className={cn("absolute inset-x-0 top-0 h-0.5", accentClass)} />
+        <div className={cn(
+          "w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ring-1 ring-white/70 dark:ring-slate-900/60",
+          variant === 'default' && "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-red-100 group-hover:text-red-600 dark:group-hover:bg-red-900/30 dark:group-hover:text-red-400",
+          variant === 'secondary' && "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
+          variant === 'destructive' && "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400",
+          variant === 'outline' && "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400"
+        )}>
+          {Icon ? <Icon className="h-5 w-5" /> : <TrendingUp className="h-5 w-5" />}
+        </div>
+
+        <div className="w-full">
+          <span className={cn(
+            "text-xl sm:text-2xl font-bold tracking-tight block break-words",
+            variant === 'default' && "text-slate-900 dark:text-slate-100",
+            variant === 'secondary' && "text-blue-700 dark:text-blue-300",
+            variant === 'destructive' && "text-red-700 dark:text-red-300",
+            variant === 'outline' && "text-slate-700 dark:text-slate-300"
+          )}>
+            {value}
+          </span>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-1 break-words leading-snug">
+            {label}
+          </p>
+        </div>
+      </div>
+    );
   };
 
   const renderOverviewStats = (data: OverviewReport) => (
-    <>
-      <div className="flex justify-between">
-        <span>Total Tasks:</span>
-        <Badge variant="outline">{data.tasks?.total || 0}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Completed:</span>
-        <Badge variant="default">{data.tasks?.completed || 0}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Total Users:</span>
-        <Badge variant="outline">{data.users?.length || 0}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Departments:</span>
-        <Badge variant="outline">{data.departments?.length || 0}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Leave Requests:</span>
-        <Badge variant="outline">{data.leave?.total || 0}</Badge>
-      </div>
-    </>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 auto-rows-fr">
+      <StatCard label="Total Tasks" value={data.tasks?.total || 0} icon={ClipboardList} />
+      <StatCard label="Completed" value={data.tasks?.completed || 0} variant="secondary" />
+      <StatCard label="Total Users" value={data.users?.length || 0} icon={Users} />
+      <StatCard label="Departments" value={data.departments?.length || 0} icon={Building2} />
+      <StatCard label="Leave Requests" value={data.leave?.total || 0} icon={CalendarDays} />
+    </div>
   );
 
   const renderTasksStats = (data: TasksReport) => {
-    console.log('📊 Rendering Tasks stats with data:', data);
-    console.log('📈 Tasks data breakdown:', {
-      total: data.total,
-      completed: data.byStatus?.completed,
-      inProgress: data.byStatus?.inProgress,
-      urgent: data.byPriority?.urgent,
-      topPerformers: data.topPerformers?.length
-    });
-
     const totalTasks = data.total || 0;
     const completedTasks = data.byStatus?.completed || 0;
     const inProgressTasks = data.byStatus?.inProgress || 0;
     const urgentTasks = data.byPriority?.urgent || 0;
     const topPerformersCount = data.topPerformers?.length || 0;
 
-    console.log('📊 Final values to display:', {
-      totalTasks, completedTasks, inProgressTasks, urgentTasks, topPerformersCount
-    });
-
     return (
-      <>
-        <div className="flex justify-between">
-          <span>Total Tasks:</span>
-          <Badge variant="outline">{totalTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Completed:</span>
-          <Badge variant="default">{completedTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>In Progress:</span>
-          <Badge variant="secondary">{inProgressTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Urgent:</span>
-          <Badge variant="destructive">{urgentTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Top Performers:</span>
-          <Badge variant="outline">{topPerformersCount}</Badge>
-        </div>
-      </>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 auto-rows-fr">
+        <StatCard label="Total Tasks" value={totalTasks} icon={ClipboardList} />
+        <StatCard label="Completed" value={completedTasks} variant="secondary" />
+        <StatCard label="In Progress" value={inProgressTasks} variant="outline" />
+        <StatCard label="Urgent" value={urgentTasks} variant="destructive" />
+        <StatCard label="Top Performers" value={topPerformersCount} icon={TrendingUp} />
+      </div>
     );
   };
 
   const renderDepartmentsStats = (data: DepartmentsReport) => {
-    console.log('🏢 Rendering departments stats with data:', data);
-
     const totalDepartments = data.summary?.totalDepartments || 0;
     const totalMembers = data.summary?.totalMembers || 0;
     const totalTasks = data.summary?.totalTasks || 0;
     const totalCompleted = data.summary?.totalCompleted || 0;
     const averageCompletionRate = data.summary?.averageCompletionRate || 0;
 
-    console.log('🏢 Final departments values:', {
-      totalDepartments, totalMembers, totalTasks, totalCompleted, averageCompletionRate
-    });
-
     return (
-      <>
-        <div className="flex justify-between">
-          <span>Total Departments:</span>
-          <Badge variant="outline">{totalDepartments}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Total Members:</span>
-          <Badge variant="default">{totalMembers}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Total Tasks:</span>
-          <Badge variant="outline">{totalTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Completed Tasks:</span>
-          <Badge variant="secondary">{totalCompleted}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Avg Completion:</span>
-          <Badge variant="outline">{averageCompletionRate.toFixed(1)}%</Badge>
-        </div>
-      </>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 auto-rows-fr">
+        <StatCard label="Departments" value={totalDepartments} icon={Building2} />
+        <StatCard label="Total Members" value={totalMembers} icon={Users} />
+        <StatCard label="Total Tasks" value={totalTasks} icon={ClipboardList} />
+        <StatCard label="Completed" value={totalCompleted} variant="secondary" />
+        <StatCard label="Avg Completion" value={`${averageCompletionRate.toFixed(1)}%`} variant="outline" />
+      </div>
     );
   };
 
   const renderUsersStats = (data: UsersReport) => {
-    console.log('👥 Rendering users stats with data:', data);
-
     const totalUsers = data.summary?.totalUsers || 0;
     const activeUsers = data.summary?.activeUsers || 0;
     const usersWithTasks = data.summary?.usersWithTasks || 0;
     const totalTasks = data.summary?.totalTasks || 0;
     const averageCompletionRate = data.summary?.averageCompletionRate || 0;
 
-    console.log('👥 Final users values:', {
-      totalUsers, activeUsers, usersWithTasks, totalTasks, averageCompletionRate
-    });
-
     return (
-      <>
-        <div className="flex justify-between">
-          <span>Total Users:</span>
-          <Badge variant="outline">{totalUsers}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Active Users:</span>
-          <Badge variant="default">{activeUsers}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Users with Tasks:</span>
-          <Badge variant="secondary">{usersWithTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Total Tasks:</span>
-          <Badge variant="outline">{totalTasks}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Avg Completion:</span>
-          <Badge variant="outline">{averageCompletionRate.toFixed(1)}%</Badge>
-        </div>
-      </>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 auto-rows-fr">
+        <StatCard label="Total Users" value={totalUsers} icon={Users} />
+        <StatCard label="Active Users" value={activeUsers} variant="secondary" />
+        <StatCard label="With Tasks" value={usersWithTasks} variant="outline" />
+        <StatCard label="Total Tasks" value={totalTasks} icon={ClipboardList} />
+        <StatCard label="Avg Completion" value={`${averageCompletionRate.toFixed(1)}%`} variant="outline" />
+      </div>
     );
   };
 
   const renderLeaveStats = (data: LeaveReport) => {
-    console.log('📅 Rendering leave stats with data:', data);
-
     const totalRequests = data.summary?.total || 0;
     const approved = data.summary?.approved || 0;
     const pending = data.summary?.pending || 0;
     const totalDays = data.summary?.totalDays || 0;
     const topUsersCount = data.topUsers?.length || 0;
 
-    console.log('📅 Final leave values:', {
-      totalRequests, approved, pending, totalDays, topUsersCount
-    });
-
     return (
-      <>
-        <div className="flex justify-between">
-          <span>Total Requests:</span>
-          <Badge variant="outline">{totalRequests}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Approved:</span>
-          <Badge variant="default">{approved}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Pending:</span>
-          <Badge variant="secondary">{pending}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Total Days:</span>
-          <Badge variant="outline">{totalDays}</Badge>
-        </div>
-        <div className="flex justify-between">
-          <span>Top Users:</span>
-          <Badge variant="outline">{topUsersCount}</Badge>
-        </div>
-      </>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 auto-rows-fr">
+        <StatCard label="Total Requests" value={totalRequests} icon={CalendarDays} />
+        <StatCard label="Approved" value={approved} variant="secondary" />
+        <StatCard label="Pending" value={pending} variant="outline" />
+        <StatCard label="Total Days" value={totalDays} icon={CalendarIcon} />
+        <StatCard label="Top Users" value={topUsersCount} icon={Users} />
+      </div>
     );
   };
-
-  const renderOverviewFallbackStats = () => (
-    <>
-      <div className="flex justify-between">
-        <span>Total Tasks:</span>
-        <Badge variant="outline">{mockTasks.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Completed:</span>
-        <Badge variant="default">{mockTasks.filter(t => t.status === 'completed').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Total Users:</span>
-        <Badge variant="outline">{mockUsers.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Departments:</span>
-        <Badge variant="outline">{mockDepartments.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Leave Requests:</span>
-        <Badge variant="outline">{0}</Badge>
-      </div>
-    </>
-  );
-
-  const renderTasksFallbackStats = () => (
-    <>
-      <div className="flex justify-between">
-        <span>Total Tasks:</span>
-        <Badge variant="outline">{mockTasks.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Completed:</span>
-        <Badge variant="default">{mockTasks.filter(t => t.status === 'completed').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>In Progress:</span>
-        <Badge variant="secondary">{mockTasks.filter(t => t.status === 'in_progress').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Urgent:</span>
-        <Badge variant="destructive">{mockTasks.filter(t => t.priority === 'urgent').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Mock Data:</span>
-        <Badge variant="outline">Ready</Badge>
-      </div>
-    </>
-  );
-
-  const renderDepartmentsFallbackStats = () => (
-    <>
-      <div className="flex justify-between">
-        <span>Departments:</span>
-        <Badge variant="outline">{mockDepartments.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Total Members:</span>
-        <Badge variant="default">{mockDepartments.reduce((sum, dept) => sum + dept.memberCount, 0)}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Total Tasks:</span>
-        <Badge variant="outline">{mockTasks.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Completed Tasks:</span>
-        <Badge variant="secondary">{mockTasks.filter(t => t.status === 'completed').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Mock Data:</span>
-        <Badge variant="outline">Ready</Badge>
-      </div>
-    </>
-  );
-
-  const renderUsersFallbackStats = () => (
-    <>
-      <div className="flex justify-between">
-        <span>Total Users:</span>
-        <Badge variant="outline">{mockUsers.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Active Users:</span>
-        <Badge variant="default">{mockUsers.filter(u => u.isActive).length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Users with Tasks:</span>
-        <Badge variant="secondary">{mockUsers.filter(u => mockTasks.some(t => t.assignedTo === u.id)).length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Total Tasks:</span>
-        <Badge variant="outline">{mockTasks.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Mock Data:</span>
-        <Badge variant="outline">Ready</Badge>
-      </div>
-    </>
-  );
-
-  const renderLeaveFallbackStats = () => (
-    <>
-      <div className="flex justify-between">
-        <span>Total Requests:</span>
-        <Badge variant="outline">{mockLeaveRequests.length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Approved:</span>
-        <Badge variant="default">{mockLeaveRequests.filter(l => l.status === 'approved').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Pending:</span>
-        <Badge variant="secondary">{mockLeaveRequests.filter(l => l.status === 'pending').length}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Total Days:</span>
-        <Badge variant="outline">{mockLeaveRequests.reduce((sum, l) => sum + l.totalDays, 0)}</Badge>
-      </div>
-      <div className="flex justify-between">
-        <span>Mock Data:</span>
-        <Badge variant="outline">Ready</Badge>
-      </div>
-    </>
-  );
-
   const quickDateSelect = (option: string) => {
     const dateOption = quickDateOptions.find(opt => opt.value === option);
     if (dateOption) {
       const range = getDateRange(option);
       setSelectedDate(range.start);
+      setDateRange(range);
       setReportType(dateOption.type);
     }
   };
@@ -1010,307 +421,311 @@ export default function ReportsManagement() {
           </div>
         </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Report Configuration */}
-        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-          <Card className="group border-slate-200 dark:border-slate-700 shadow-lg hover:shadow-xl transition-all duration-300 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm hover:border-red-200 dark:hover:border-red-800">
-            <CardHeader className="relative bg-gradient-to-r from-red-50/80 to-slate-50/80 dark:from-red-900/20 dark:to-slate-800/80 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
-              <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 to-transparent dark:from-red-400/5 rounded-t-xl"></div>
-              <CardTitle className="relative flex items-center gap-2 sm:gap-3 lg:gap-4 text-slate-900 dark:text-slate-100">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25 group-hover:scale-110 transition-transform duration-300">
-                  <Filter className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg lg:text-xl font-bold">
-                    <span className="hidden sm:inline">Report Configuration</span>
-                    <span className="sm:hidden">Configuration</span>
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    <span className="hidden sm:inline">Customize your report parameters and settings</span>
-                    <span className="sm:hidden">Customize report settings</span>
-                  </p>
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
-              {/* Quick Date Selection */}
-              <div className="bg-gradient-to-r from-slate-50 to-red-50/30 dark:from-slate-800/50 dark:to-red-900/10 rounded-2xl p-3 sm:p-4 lg:p-6 border border-slate-200/50 dark:border-slate-700/50">
-                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                    <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* Report Configuration */}
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+            <Card className="group border-slate-200 dark:border-slate-700 shadow-lg hover:shadow-xl transition-all duration-300 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm hover:border-red-200 dark:hover:border-red-800">
+              <CardHeader className="relative bg-gradient-to-r from-red-50/80 to-slate-50/80 dark:from-red-900/20 dark:to-slate-800/80 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
+                <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 to-transparent dark:from-red-400/5 rounded-t-xl"></div>
+                <CardTitle className="relative flex items-center gap-2 sm:gap-3 lg:gap-4 text-slate-900 dark:text-slate-100">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 lg:w-12 lg:h-12 bg-gradient-to-br from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/25 group-hover:scale-110 transition-transform duration-300">
+                    <Filter className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-white" />
                   </div>
-                  <h4 className="text-sm sm:text-base lg:text-lg font-semibold text-slate-900 dark:text-slate-100">
-                    <span className="hidden sm:inline">Quick Date Selection</span>
-                    <span className="sm:hidden">Quick Dates</span>
-                  </h4>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mb-3 sm:mb-4">
-                  <span className="hidden sm:inline">Choose from predefined time periods for faster report generation</span>
-                  <span className="sm:hidden">Choose predefined time periods</span>
-                </p>
-                <div className="flex flex-wrap gap-2 sm:gap-3">
-                  {quickDateOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => quickDateSelect(option.value)}
-                      className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-600 hover:text-red-700 dark:hover:text-red-300 rounded-xl font-medium transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Date Selection */}
-              <div className="bg-gradient-to-r from-slate-50 to-red-50/30 dark:from-slate-800/50 dark:to-red-900/10 rounded-2xl p-3 sm:p-4 lg:p-6 border border-slate-200/50 dark:border-slate-700/50">
-                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 lg:mb-6">
-                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                    <CalendarIcon className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+                  <div>
+                    <h3 className="text-base sm:text-lg lg:text-xl font-bold">
+                      <span className="hidden sm:inline">Report Configuration</span>
+                      <span className="sm:hidden">Configuration</span>
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+                      <span className="hidden sm:inline">Customize your report parameters and settings</span>
+                      <span className="sm:hidden">Customize report settings</span>
+                    </p>
                   </div>
-                  <h4 className="text-sm sm:text-base lg:text-lg font-semibold text-slate-900 dark:text-slate-100">
-                    <span className="hidden sm:inline">Custom Date Selection</span>
-                    <span className="sm:hidden">Custom Dates</span>
-                  </h4>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mb-3 sm:mb-4 lg:mb-6">
-                  <span className="hidden sm:inline">Configure specific date ranges and report types for detailed analysis</span>
-                  <span className="sm:hidden">Configure date ranges and report types</span>
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
-                  <div className="space-y-2 sm:space-y-3">
-                    <label className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 block">Report Type</label>
-                    <Select value={reportType} onValueChange={(value: 'weekly' | 'monthly') => setReportType(value)}>
-                      <SelectTrigger className="border-slate-200 dark:border-slate-600 focus:border-red-500 dark:focus:border-red-400 rounded-xl h-10 sm:h-12 bg-white dark:bg-slate-800 shadow-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="weekly">📅 Weekly Report</SelectItem>
-                        <SelectItem value="monthly">📊 Monthly Report</SelectItem>
-                      </SelectContent>
-                    </Select>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 sm:p-4 lg:p-8 space-y-6 sm:space-y-8">
+                {/* Quick Date Selection */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-8 h-8 bg-red-50 dark:bg-red-900/20 rounded-lg flex items-center justify-center">
+                      <CalendarIcon className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                        Time Period
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Select reporting period</p>
+                    </div>
                   </div>
 
-                  <div className="space-y-2 sm:space-y-3">
-                    <label className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 block">Select Date</label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal border-slate-200 dark:border-slate-600 hover:border-red-300 dark:hover:border-red-600 rounded-xl h-10 sm:h-12 bg-white dark:bg-slate-800 shadow-sm text-xs sm:text-sm",
-                            !selectedDate && "text-slate-500 dark:text-slate-400"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-                          {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 border-slate-200 dark:border-slate-700 shadow-xl">
-                        <Calendar
-                          mode="single"
-                          selected={selectedDate}
-                          onSelect={(date) => date && setSelectedDate(date)}
-                          initialFocus
-                          className="rounded-xl"
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
-              </div>
-
-              {/* Report Category */}
-              <div className="bg-gradient-to-r from-slate-50 to-red-50/30 dark:from-slate-800/50 dark:to-red-900/10 rounded-2xl p-3 sm:p-4 border border-slate-200/50 dark:border-slate-700/50">
-                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 lg:mb-6">
-                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                    <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                  </div>
-                  <h4 className="text-sm sm:text-base lg:text-lg font-semibold text-slate-900 dark:text-slate-100">
-                    <span className="hidden sm:inline">Report Category</span>
-                    <span className="sm:hidden">Category</span>
-                  </h4>
-                </div>
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mb-3 sm:mb-4 lg:mb-6">
-                  <span className="hidden sm:inline">Select the type of report you want to generate and analyze</span>
-                  <span className="sm:hidden">Select report type to generate</span>
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
-                  {reportCategories.map((category) => {
-                    const Icon = category.icon;
-                    return (
-                      <div
-                        key={category.id}
-                        className={cn(
-                          "p-2 sm:p-3 border rounded-2xl cursor-pointer transition-all duration-300 hover:shadow-lg group relative overflow-hidden",
-                          reportCategory === category.id
-                            ? "border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-900/20 dark:to-red-800/10 shadow-lg shadow-red-500/10"
-                            : "border-slate-200 dark:border-slate-700 hover:border-red-300 dark:hover:border-red-600 hover:bg-gradient-to-br hover:from-slate-50 hover:to-red-50/30 dark:hover:from-slate-800/50 dark:hover:to-red-900/10"
-                        )}
-                        onClick={() => setReportCategory(category.id as typeof reportCategory)}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+                    {quickDateOptions.map((option) => (
+                      <Button
+                        key={option.value}
+                        variant="outline"
+                        onClick={() => quickDateSelect(option.value)}
+                        className="h-auto py-2 sm:py-3 flex flex-col gap-1 border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-900/10 transition-all duration-200"
                       >
-                        {/* Background gradient overlay */}
-                        <div className={cn(
-                          "absolute inset-0 opacity-0 transition-opacity duration-300",
-                          reportCategory === category.id
-                            ? "opacity-100 bg-gradient-to-br from-red-500/5 to-transparent"
-                            : "group-hover:opacity-100 bg-gradient-to-br from-red-500/5 to-transparent"
-                        )}></div>
-                        
-                        <div className="relative">
-                          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-medium">{option.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Date Selection */}
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Report Type</label>
+                      <Select
+                        value={reportType}
+                        onValueChange={(value: 'weekly' | 'monthly') => {
+                          setReportType(value);
+                          const range = value === 'weekly'
+                            ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
+                            : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+                          setDateRange(range);
+                        }}
+                      >
+                        <SelectTrigger className="h-10 sm:h-12 border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="weekly">📅 Weekly Report</SelectItem>
+                          <SelectItem value="monthly">📊 Monthly Report</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Select Date</label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal h-10 sm:h-12 border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50",
+                              !selectedDate && "text-slate-500 dark:text-slate-400"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 border-slate-200 dark:border-slate-700 shadow-xl">
+                          <Calendar
+                            mode="single"
+                            selected={selectedDate}
+                            onSelect={(date) => {
+                              if (date) {
+                                setSelectedDate(date);
+                                const range = reportType === 'weekly'
+                                  ? { start: startOfWeek(date), end: endOfWeek(date) }
+                                  : { start: startOfMonth(date), end: endOfMonth(date) };
+                                setDateRange(range);
+                              }
+                            }}
+                            initialFocus
+                            className="rounded-xl"
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Report Category */}
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-8 h-8 bg-red-50 dark:bg-red-900/20 rounded-lg flex items-center justify-center">
+                      <BarChart3 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                        Report Category
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Choose data source</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {reportCategories.map((category) => {
+                      const Icon = category.icon;
+                      const isSelected = reportCategory === category.id;
+                      return (
+                        <div
+                          key={category.id}
+                          className={cn(
+                            "p-3 sm:p-4 border rounded-xl cursor-pointer transition-all duration-200 relative overflow-hidden group",
+                            isSelected
+                              ? "border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-900/10 shadow-sm"
+                              : "border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          )}
+                          onClick={() => setReportCategory(category.id as typeof reportCategory)}
+                        >
+                          <div className="flex items-start gap-3 sm:gap-4 relative z-10">
                             <div className={cn(
-                              "w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-all duration-300 shadow-sm",
-                              reportCategory === category.id
-                                ? "bg-gradient-to-br from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 shadow-lg shadow-red-500/25"
-                                : "bg-slate-100 dark:bg-slate-700 group-hover:bg-gradient-to-br group-hover:from-red-100 group-hover:to-red-200 dark:group-hover:from-red-900/30 dark:group-hover:to-red-800/20"
+                              "w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center transition-colors shrink-0",
+                              isSelected
+                                ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-red-500 dark:group-hover:text-red-400"
                             )}>
-                              <Icon className={cn(
-                                "h-4 w-4 sm:h-5 sm:w-5 transition-colors",
-                                reportCategory === category.id
-                                  ? "text-white"
-                                  : "text-slate-600 dark:text-slate-400 group-hover:text-red-600 dark:group-hover:text-red-400"
-                              )} />
+                              <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
                             </div>
                             <div>
-                              <span className="font-semibold text-xs sm:text-sm text-slate-900 dark:text-slate-100">{category.label}</span>
-                              {reportCategory === category.id && (
-                                <div className="flex items-center gap-1 mt-1">
-                                  <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-red-500 rounded-full"></div>
-                                  <span className="text-xs text-red-600 dark:text-red-400 font-medium">Selected</span>
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <span className={cn(
+                                  "font-semibold text-sm sm:text-base",
+                                  isSelected ? "text-slate-900 dark:text-slate-100" : "text-slate-700 dark:text-slate-300"
+                                )}>{category.label}</span>
+                                {isSelected && (
+                                  <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-[10px] px-1.5 py-0 h-5">
+                                    Selected
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                                {category.description}
+                              </p>
                             </div>
                           </div>
-                          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{category.description}</p>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Download Options */}
-          <Card className="border-slate-200 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-            <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
-              <CardTitle className="flex items-center gap-2 sm:gap-3 text-slate-900 dark:text-slate-100">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                  <Download className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                </div>
-                <span className="text-sm sm:text-base lg:text-lg">
-                  <span className="hidden sm:inline">Download Options</span>
-                  <span className="sm:hidden">Download</span>
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 lg:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
-                <Button
-                  onClick={() => downloadReport('json')}
-                  disabled={isGenerating}
-                  className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/25 rounded-lg font-medium transition-all duration-200 hover:scale-105 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-                >
-                  <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden sm:inline">Download JSON</span>
-                  <span className="sm:hidden">JSON</span>
-                </Button>
-                <Button
-                  onClick={() => downloadReport('csv')}
-                  disabled={isGenerating}
-                  className="flex items-center gap-1 sm:gap-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-red-300 dark:hover:border-red-600 rounded-lg font-medium transition-all duration-200 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-                  variant="outline"
-                >
-                  <FileSpreadsheet className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden sm:inline">Download CSV</span>
-                  <span className="sm:hidden">CSV</span>
-                </Button>
-                <Button
-                  onClick={() => downloadReport('pdf')}
-                  disabled={isGenerating}
-                  className="flex items-center gap-1 sm:gap-2 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-red-300 dark:hover:border-red-600 rounded-lg font-medium transition-all duration-200 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2"
-                  variant="outline"
-                >
-                  <FileImage className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden sm:inline">Download PDF</span>
-                  <span className="sm:hidden">PDF</span>
-                </Button>
-              </div>
-
-              {/* Data Source & Testing section removed as requested */}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Report Preview */}
-        <div>
-          <Card className="border-slate-200 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-            <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
-              <CardTitle className="flex items-center gap-2 sm:gap-3 text-slate-900 dark:text-slate-100">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
-                </div>
-                <span className="text-sm sm:text-base lg:text-lg">
-                  <span className="hidden sm:inline">Report Preview</span>
-                  <span className="sm:hidden">Preview</span>
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-4 lg:p-6">
-              <div className="space-y-3 sm:space-y-4 lg:space-y-6">
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1 sm:mb-2">Report Type:</p>
-                  <Badge variant="outline" className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs sm:text-sm">{reportType}</Badge>
-                </div>
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1 sm:mb-2">Category:</p>
-                  <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800 text-xs sm:text-sm">{reportCategory}</Badge>
-                </div>
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1 sm:mb-2">Period:</p>
-                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700">
-                    {reportType === 'weekly' 
-                      ? `${format(startOfWeek(selectedDate), 'MMM dd')} - ${format(endOfWeek(selectedDate), 'MMM dd, yyyy')}`
-                      : `${format(startOfMonth(selectedDate), 'MMM dd')} - ${format(endOfMonth(selectedDate), 'MMM dd, yyyy')}`
-                    }
-                  </p>
-                </div>
-                
-                {/* Quick Stats Preview */}
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-3 sm:pt-4 lg:pt-6">
-                  <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 sm:mb-3 lg:mb-4">
-                    <span className="hidden sm:inline">Quick Stats:</span>
-                    <span className="sm:hidden">Stats:</span>
-                  </p>
-                  <div className="space-y-2 sm:space-y-3 text-xs sm:text-sm">
-                    {isLoadingData ? (
-                      <div className="text-center py-4 sm:py-6">
-                        <div className="relative mx-auto mb-3 sm:mb-4">
-                          {/* Outer ring */}
-                          <div className="w-6 h-6 sm:w-8 sm:h-8 border-4 border-slate-200 dark:border-slate-700 rounded-full animate-spin border-t-red-600"></div>
-                          {/* Inner ring */}
-                          <div className="absolute top-1 left-1 w-4 h-4 sm:w-6 sm:h-6 border-4 border-slate-100 dark:border-slate-600 rounded-full animate-spin border-t-red-400" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
-                          {/* Center dot */}
-                          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-red-600 rounded-full animate-pulse"></div>
-                        </div>
-                        <span className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm">Loading data...</span>
-                      </div>
-                    ) : reportData ? (
-                      <>{renderQuickStats()}</>
-                    ) : (
-                      <>{renderFallbackStats()}</>
-                    )}
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Download Options */}
+            <Card className="border-slate-200 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+              <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
+                <CardTitle className="flex items-center gap-2 text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <Download className="h-4 w-4 text-slate-500" />
+                  Export Data
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 sm:p-4 lg:p-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Button
+                    onClick={() => downloadReport('json')}
+                    disabled={isGenerating}
+                    variant="outline"
+                    className="h-auto py-3 sm:py-4 flex flex-col gap-2 border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-900/10"
+                  >
+                    <FileText className="h-5 w-5 text-slate-500" />
+                    <div className="text-center">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">JSON</span>
+                      <span className="block text-xs text-slate-500">Raw data format</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    onClick={() => downloadReport('csv')}
+                    disabled={isGenerating}
+                    variant="outline"
+                    className="h-auto py-3 sm:py-4 flex flex-col gap-2 border-slate-200 dark:border-slate-700 hover:border-green-200 dark:hover:border-green-800 hover:bg-green-50/50 dark:hover:bg-green-900/10"
+                  >
+                    <FileSpreadsheet className="h-5 w-5 text-green-600 dark:text-green-500" />
+                    <div className="text-center">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">CSV</span>
+                      <span className="block text-xs text-slate-500">Spreadsheet format</span>
+                    </div>
+                  </Button>
+
+                  <Button
+                    onClick={() => downloadReport('pdf')}
+                    disabled={isGenerating}
+                    variant="outline"
+                    className="h-auto py-3 sm:py-4 flex flex-col gap-2 border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50/50 dark:hover:bg-red-900/10"
+                  >
+                    <FileImage className="h-5 w-5 text-red-600 dark:text-red-500" />
+                    <div className="text-center">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">PDF</span>
+                      <span className="block text-xs text-slate-500">Document format</span>
+                    </div>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Report Preview */}
+          <div>
+            <Card className="border-slate-200 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+              <CardHeader className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 lg:p-6">
+                <CardTitle className="flex items-center gap-2 sm:gap-3 text-slate-900 dark:text-slate-100">
+                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-red-50 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-red-600 dark:text-red-400" />
+                  </div>
+                  <span className="text-sm sm:text-base lg:text-lg">
+                    <span className="hidden sm:inline">Report Preview</span>
+                    <span className="sm:hidden">Preview</span>
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 sm:p-4 lg:p-6">
+                <div className="space-y-3 sm:space-y-4 lg:space-y-6">
+                  <div>
+                    <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1 sm:mb-2">Report Type:</p>
+                    <Badge variant="outline" className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs sm:text-sm">{reportType}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1 sm:mb-2">Category:</p>
+                    <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800 text-xs sm:text-sm">{reportCategory}</Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1 sm:mb-2">Period:</p>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                      {format(dateRange.start, 'MMM dd, yyyy')} - {format(dateRange.end, 'MMM dd, yyyy')}
+                    </p>
+                  </div>
+
+                  {/* Quick Stats Preview */}
+                  <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-red-500 to-red-600 dark:from-red-400 dark:to-red-500 flex items-center justify-center shadow-sm shadow-red-500/30">
+                        <TrendingUp className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          Quick Analysis
+                        </h4>
+                        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Snapshot for selected period</p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-700/60 bg-gradient-to-br from-white via-white to-red-50/70 dark:from-slate-900/60 dark:via-slate-900/40 dark:to-red-900/20 shadow-sm">
+                      <div className="min-h-[200px] p-4 sm:p-5">
+                        {isLoadingData ? (
+                          <div className="flex flex-col items-center justify-center py-8">
+                            <div className="relative mb-4">
+                              <div className="w-10 h-10 border-4 border-slate-200 dark:border-slate-700 rounded-full animate-spin border-t-red-600"></div>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
+                              </div>
+                            </div>
+                            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Analyzing data...</p>
+                          </div>
+                        ) : reportData ? (
+                          <div className="space-y-4">
+                            {renderQuickStats()}
+                          </div>
+                        ) : (
+                          <div className="text-center py-8">
+                            <BarChart3 className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">No Data Available</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Try selecting a different date range</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );

@@ -42,7 +42,7 @@ export default function HRMeetingsManagement() {
         try {
           const testResponse = await fetch('http://localhost:5000/api/meetings', {
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
               'Content-Type': 'application/json'
             }
           });

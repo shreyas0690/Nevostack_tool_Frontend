@@ -50,6 +50,7 @@ import {
   Paperclip,
   File,
   BarChart3,
+  MessageCircle,
   Trash2
 } from 'lucide-react';
 import {
@@ -61,9 +62,9 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/components/Auth/AuthProvider';
 import { mockDepartments } from '@/data/mockData';
-import type { User } from '@/types/company';
 import toast from 'react-hot-toast';
 import AssignTaskDialog from './AssignTaskDialog';
+import TaskDiscussionDialog from './TaskDiscussionDialog';
 import { useQuery } from '@tanstack/react-query';
 import { taskService } from '@/services/taskService';
 import { userService } from '@/services/userService';
@@ -100,6 +101,8 @@ export default function SuperAdminTasksManagement() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<any>(null);
   const [showViewDetailsDialog, setShowViewDetailsDialog] = useState(false);
+  const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
+  const [discussionTask, setDiscussionTask] = useState<any>(null);
 
   // Real data state (fetch from backend and override mocks)
   const [usersState, setUsersState] = useState<any[]>([]);
@@ -122,6 +125,10 @@ export default function SuperAdminTasksManagement() {
 
   const getUserDisplayName = (ref: any) => {
     if (!ref) return null;
+    if (Array.isArray(ref)) {
+      const names = ref.map(r => getUserDisplayName(r)).filter(Boolean);
+      return names.join(', ');
+    }
     // if resolveUserRef returns object with name
     const resolved = resolveUserRef(ref);
     if (resolved && resolved.name) return resolved.name;
@@ -251,9 +258,59 @@ export default function SuperAdminTasksManagement() {
     return isNaN(parsed.getTime()) ? new Date(0) : parsed;
   };
 
+  const getEndOfDay = (date: Date) => (
+    new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+  );
+
+  const resolveDueDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null;
+      if (value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0 && value.getMilliseconds() === 0) {
+        return getEndOfDay(value);
+      }
+      return new Date(value.getTime());
+    }
+
+    if (typeof value === 'string') {
+      const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnlyMatch) {
+        const year = Number(dateOnlyMatch[1]);
+        const month = Number(dateOnlyMatch[2]) - 1;
+        const day = Number(dateOnlyMatch[3]);
+        return new Date(year, month, day, 23, 59, 59, 999);
+      }
+
+      const midnightMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})T00:00(?::00(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/);
+      if (midnightMatch) {
+        const year = Number(midnightMatch[1]);
+        const month = Number(midnightMatch[2]) - 1;
+        const day = Number(midnightMatch[3]);
+        return new Date(year, month, day, 23, 59, 59, 999);
+      }
+
+      const parsed = new Date(value);
+      if (isNaN(parsed.getTime())) return null;
+      if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0 && parsed.getMilliseconds() === 0) {
+        return getEndOfDay(parsed);
+      }
+      return parsed;
+    }
+
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return null;
+    if (parsed.getHours() === 0 && parsed.getMinutes() === 0 && parsed.getSeconds() === 0 && parsed.getMilliseconds() === 0) {
+      return getEndOfDay(parsed);
+    }
+    return parsed;
+  };
+
   const getTimeRemaining = (dueDate: any) => {
     const now = currentTime;
-    const due = normalizeDate(dueDate);
+    const due = resolveDueDate(dueDate);
+    if (!due) {
+      return { text: 'No due date', color: 'text-slate-500', isOverdue: false, days: 0, hours: 0, minutes: 0, seconds: 0 };
+    }
     const diffMs = due.getTime() - now.getTime();
 
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -361,11 +418,21 @@ export default function SuperAdminTasksManagement() {
   // Function to add new task
   const handleAssignTask = async (taskData: any) => {
     try {
+      const createdTasks = Array.isArray(taskData)
+        ? (taskData.filter(Boolean))
+        : (taskData ? [taskData] : []);
+
       // After a task is created we want to ensure we show the latest version (with attachments)
       if (refetchTasks) await refetchTasks();
 
       setShowAssignDialog(false);
-      toast.success(`Task "${taskData.title}" created successfully! 🎉`);
+      if (createdTasks.length === 0) {
+        toast.success('Tasks created successfully! 🎉');
+      } else if (createdTasks.length === 1) {
+        toast.success(`Task "${createdTasks[0]?.title || 'Task'}" created successfully! 🎉`);
+      } else {
+        toast.success(`Task "${createdTasks[0]?.title || 'Task'}" assigned to ${createdTasks.length} team members! 🎉`);
+      }
     } catch (err) {
       console.error('Failed to create task:', err);
       toast.error("Failed to create task. Please try again.");
@@ -376,7 +443,7 @@ export default function SuperAdminTasksManagement() {
   const allTasks = tasksState;
 
   // Get all users across all departments for super admin
-  const allUsers = mockUsers;
+  const allUsers = usersState.length ? usersState : mockUsers;
 
   // Get tasks by category
   const recentTasks = allTasks.filter(t => t.status !== 'completed' && t.status !== 'blocked' && !getTimeRemaining(t.dueDate).isOverdue);
@@ -399,8 +466,9 @@ export default function SuperAdminTasksManagement() {
 
   // Filter tasks based on current tab
   const filteredTasks = getCurrentTabTasks().filter(task => {
-    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const searchValue = searchTerm.toLowerCase();
+    const matchesSearch = String(task.title || '').toLowerCase().includes(searchValue) ||
+                         String(task.description || '').toLowerCase().includes(searchValue);
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
     
     // Handle department filtering - departmentId can be an object (populated) or string
@@ -790,6 +858,9 @@ export default function SuperAdminTasksManagement() {
                   };
 
                   const assignedUser = resolveUserRef(task.assignedTo);
+                  const assignedNames = Array.isArray(task.assignedToList) && task.assignedToList.length
+                    ? task.assignedToList.map((a: any) => getUserDisplayName(a)).filter(Boolean).join(', ')
+                    : (assignedUser?.name || selectedAssignedUserState?.name || getUserDisplayName(task.assignedTo));
                   const assignedByUser = resolveUserRef(task.assignedBy);
                   // Resolve role from multiple possible fields and log for debugging
                   const resolvedAssignedByRole = (() => {
@@ -811,6 +882,7 @@ export default function SuperAdminTasksManagement() {
                     // eslint-disable-next-line no-console
                     console.debug('task.assigner.resolve', { taskId: task.id, taskAssignedByRole: task.assignedByRole, assignedByUser, selectedAssignedByUserState, resolvedAssignedByRole });
                   } catch (e) { /* ignore */ }
+                  const isDialogOpen = showViewDetailsDialog && selectedTask?.id === task.id;
                   // Resolve department id/name from task (handles string id, nested object, or different shapes)
                   let taskDeptId;
                   if (task.departmentId) {
@@ -930,10 +1002,12 @@ export default function SuperAdminTasksManagement() {
                               <div className="flex items-center gap-2">
                                 <Avatar className="h-6 w-6">
                                   <AvatarFallback className="text-xs">
-                                    {(getUserDisplayName(task.assignedTo) || 'UN').split(' ').map((n: string) => n[0]).join('')}
+                                    {(Array.isArray(task.assignedToList) && task.assignedToList.length
+                                      ? getUserDisplayName(task.assignedToList[0])
+                                      : assignedNames || 'UN')?.split(' ').map((n: string) => n[0]).join('')}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span>{assignedUser?.name || selectedAssignedUserState?.name || getUserDisplayName(task.assignedTo) || 'Unknown'}</span>
+                                <span>{assignedNames || 'Unknown'}</span>
                               </div>
                             </div>
                           </div>
@@ -1013,8 +1087,21 @@ export default function SuperAdminTasksManagement() {
                           <div className="text-xs text-muted-foreground">
                             Updated: {normalizeDate(task.updatedAt).toLocaleDateString()}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Dialog open={showViewDetailsDialog && selectedTask?.id === task.id} onOpenChange={setShowViewDetailsDialog}>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button 
+                              variant="secondary" 
+                              size="sm"
+                              onClick={() => {
+                                setDiscussionTask(task);
+                                setShowDiscussionDialog(true);
+                              }}
+                              className="flex items-center gap-1"
+                            >
+                              <MessageCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                              <span className="hidden sm:inline">Discussion</span>
+                              <span className="sm:hidden">Chat</span>
+                            </Button>
+                            <Dialog open={isDialogOpen} onOpenChange={setShowViewDetailsDialog}>
                               <DialogTrigger asChild>
                                 <Button variant="outline" size="sm" onClick={() => {
                                   setSelectedTask(task);
@@ -1102,9 +1189,9 @@ export default function SuperAdminTasksManagement() {
                                             </div>
                                           ))}
                                         </div>
-                                      </div>
-                                    )}
-                                    
+                                     </div>
+                                   )}
+
                                     <div className="flex justify-end">
                                       <Button variant="outline" onClick={() => {
                                         setShowViewDetailsDialog(false);
@@ -1345,8 +1432,17 @@ export default function SuperAdminTasksManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TaskDiscussionDialog
+        open={showDiscussionDialog}
+        task={discussionTask}
+        onClose={() => {
+          setShowDiscussionDialog(false);
+          setDiscussionTask(null);
+        }}
+        currentUserId={currentUser?.id}
+        currentUserRole={currentUser?.role}
+      />
     </div>
   );
 }
-
-

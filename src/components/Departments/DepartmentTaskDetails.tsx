@@ -58,22 +58,26 @@ export default function DepartmentTaskDetails({ department, users }: DepartmentT
     return () => { mounted = false; };
   }, [department?.id]);
   
+  // Normalize arrays to avoid runtime errors when backend omits fields
+  const memberIds = Array.isArray(department.memberIds) ? department.memberIds : [];
+  const managerIds = Array.isArray(department.managerIds) ? department.managerIds : [];
+  
   // Get department head
   const departmentHead = users.find(user => user.id === department.headId);
   
   // Get managers
-  const managers = users.filter(user => department.managerIds.includes(user.id));
+  const managers = users.filter(user => managerIds.includes(user.id));
   
   // Get regular members (excluding head and managers)
   // Also include users who have this department as their departmentId but are not in managerIds or headId
   const members = users.filter(user => {
     // Include users who are explicitly in memberIds
-    if (department.memberIds.includes(user.id)) {
-      return user.id !== department.headId && !department.managerIds.includes(user.id);
+    if (memberIds.includes(user.id)) {
+      return user.id !== department.headId && !managerIds.includes(user.id);
     }
     // Also include users who have this department as their departmentId but are not managers or head
     if (user.departmentId === department.id) {
-      return user.id !== department.headId && !department.managerIds.includes(user.id);
+      return user.id !== department.headId && !managerIds.includes(user.id);
     }
     return false;
   });

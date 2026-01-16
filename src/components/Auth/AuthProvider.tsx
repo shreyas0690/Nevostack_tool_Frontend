@@ -215,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (response.device) {
             localStorage.setItem('device', JSON.stringify(response.device));
             localStorage.setItem('deviceId', response.device.deviceId);
+            localStorage.setItem('nevostack_device_id', response.device.deviceId);
           }
 
           // Record attendance
@@ -302,6 +303,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('nevostack_user');
       localStorage.removeItem('device');
       localStorage.removeItem('deviceId');
+      localStorage.removeItem('nevostack_device_id');
       localStorage.removeItem('user');
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');

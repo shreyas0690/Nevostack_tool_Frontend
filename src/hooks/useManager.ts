@@ -21,6 +21,8 @@ interface ManagerState {
   urgentTasks: UrgentTasksResponse | null;
   overdueTasks: OverdueTasksResponse | null;
   teamPerformance: TeamPerformanceData | null;
+  teamLeaves: any[] | null;
+  teamAttendance: any[] | null;
 
   // Loading states
   isLoading: boolean;
@@ -29,6 +31,8 @@ interface ManagerState {
   isLoadingUrgentTasks: boolean;
   isLoadingOverdueTasks: boolean;
   isLoadingPerformance: boolean;
+  isLoadingLeaves: boolean;
+  isLoadingAttendance: boolean;
 
   // Error states
   error: string | null;
@@ -37,6 +41,8 @@ interface ManagerState {
   urgentTasksError: string | null;
   overdueTasksError: string | null;
   performanceError: string | null;
+  leavesError: string | null;
+  attendanceError: string | null;
 }
 
 export const useManager = () => {
@@ -48,18 +54,24 @@ export const useManager = () => {
     urgentTasks: null,
     overdueTasks: null,
     teamPerformance: null,
+    teamLeaves: null,
+    teamAttendance: null,
     isLoading: false,
     isLoadingDashboard: false,
     isLoadingTeamMembers: false,
     isLoadingUrgentTasks: false,
     isLoadingOverdueTasks: false,
     isLoadingPerformance: false,
+    isLoadingLeaves: false,
+    isLoadingAttendance: false,
     error: null,
     dashboardError: null,
     teamMembersError: null,
     urgentTasksError: null,
     overdueTasksError: null,
     performanceError: null,
+    leavesError: null,
+    attendanceError: null,
   });
 
   // Fetch dashboard data
@@ -109,22 +121,6 @@ export const useManager = () => {
         console.log('API failed, using mock data for team members');
         const mockTeamMembers = [
           {
-            _id: '507f1f77bcf86cd799439014',
-            firstName: 'Jane',
-            lastName: 'Smith',
-            email: 'manager@nevostack.com',
-            role: 'manager',
-            departmentId: { _id: '507f1f77bcf86cd799439012', name: 'Engineering' },
-            taskStats: {
-              total: 12,
-              completed: 9,
-              inProgress: 3,
-              urgent: 2,
-              overdue: 0,
-              completionRate: 75
-            }
-          },
-          {
             _id: '507f1f77bcf86cd799439011',
             firstName: 'Bob',
             lastName: 'Wilson',
@@ -134,7 +130,8 @@ export const useManager = () => {
             taskStats: {
               total: 5,
               completed: 3,
-              inProgress: 2,
+              inProgress: 1,
+              assigned: 1,
               urgent: 1,
               overdue: 0,
               completionRate: 60
@@ -150,7 +147,8 @@ export const useManager = () => {
             taskStats: {
               total: 8,
               completed: 6,
-              inProgress: 2,
+              inProgress: 1,
+              assigned: 1,
               urgent: 0,
               overdue: 1,
               completionRate: 75
@@ -169,22 +167,6 @@ export const useManager = () => {
       // Fallback to mock data if network error
       const mockTeamMembers = [
         {
-          _id: '507f1f77bcf86cd799439014',
-          firstName: 'Jane',
-          lastName: 'Smith',
-          email: 'manager@nevostack.com',
-          role: 'manager',
-          departmentId: { _id: '507f1f77bcf86cd799439012', name: 'Engineering' },
-          taskStats: {
-            total: 12,
-            completed: 9,
-            inProgress: 3,
-            urgent: 2,
-            overdue: 0,
-            completionRate: 75
-          }
-        },
-        {
           _id: '507f1f77bcf86cd799439011',
           firstName: 'Bob',
           lastName: 'Wilson',
@@ -194,7 +176,8 @@ export const useManager = () => {
           taskStats: {
             total: 5,
             completed: 3,
-            inProgress: 2,
+            inProgress: 1,
+            assigned: 1,
             urgent: 1,
             overdue: 0,
             completionRate: 60
@@ -210,7 +193,8 @@ export const useManager = () => {
           taskStats: {
             total: 8,
             completed: 6,
-            inProgress: 2,
+            inProgress: 1,
+            assigned: 1,
             urgent: 0,
             overdue: 1,
             completionRate: 75
@@ -313,6 +297,87 @@ export const useManager = () => {
     }
   }, []);
 
+  // Fetch team leaves
+  const fetchTeamLeaves = useCallback(async () => {
+    setState(prev => ({ ...prev, isLoadingLeaves: true, leavesError: null }));
+    try {
+      // Mock data for now as we don't have direct service method yet
+      // In real implementation, this would call managerService.getTeamLeaves()
+      const mockLeaves = [
+        {
+          _id: 'l1',
+          userId: { _id: '507f1f77bcf86cd799439011', firstName: 'Bob', lastName: 'Wilson' },
+          type: 'Sick Leave',
+          startDate: new Date(),
+          endDate: new Date(new Date().setDate(new Date().getDate() + 1)),
+          status: 'pending',
+          reason: 'Not feeling well'
+        },
+        {
+          _id: 'l2',
+          userId: { _id: '507f1f77bcf86cd799439013', firstName: 'Carol', lastName: 'Brown' },
+          type: 'Vacation',
+          startDate: new Date(new Date().setDate(new Date().getDate() + 5)),
+          endDate: new Date(new Date().setDate(new Date().getDate() + 10)),
+          status: 'approved',
+          reason: 'Family trip'
+        }
+      ];
+
+      setState(prev => ({
+        ...prev,
+        teamLeaves: mockLeaves,
+        isLoadingLeaves: false
+      }));
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        leavesError: error instanceof Error ? error.message : 'Failed to fetch leaves',
+        isLoadingLeaves: false
+      }));
+    }
+  }, []);
+
+  // Fetch team attendance
+  const fetchTeamAttendance = useCallback(async () => {
+    setState(prev => ({ ...prev, isLoadingAttendance: true, attendanceError: null }));
+    try {
+      // Mock data for now
+      const mockAttendance = [
+        {
+          userId: '507f1f77bcf86cd799439011',
+          status: 'present',
+          checkIn: new Date(new Date().setHours(9, 0, 0)),
+          checkOut: null
+        },
+        {
+          userId: '507f1f77bcf86cd799439013',
+          status: 'late',
+          checkIn: new Date(new Date().setHours(10, 15, 0)),
+          checkOut: null
+        },
+        {
+          userId: '507f1f77bcf86cd799439014',
+          status: 'present',
+          checkIn: new Date(new Date().setHours(8, 55, 0)),
+          checkOut: null
+        }
+      ];
+
+      setState(prev => ({
+        ...prev,
+        teamAttendance: mockAttendance,
+        isLoadingAttendance: false
+      }));
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        attendanceError: error instanceof Error ? error.message : 'Failed to fetch attendance',
+        isLoadingAttendance: false
+      }));
+    }
+  }, []);
+
   // Fetch member tasks
   const fetchMemberTasks = useCallback(async (
     memberId: string,
@@ -345,12 +410,14 @@ export const useManager = () => {
     try {
       await Promise.all([
         fetchDashboard(),
-        fetchTeamMembers()
+        fetchTeamMembers(),
+        fetchTeamLeaves(),
+        fetchTeamAttendance()
       ]);
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [fetchDashboard, fetchTeamMembers]);
+  }, [fetchDashboard, fetchTeamMembers, fetchTeamLeaves, fetchTeamAttendance]);
 
   // Clear errors
   const clearErrors = useCallback(() => {
@@ -362,6 +429,8 @@ export const useManager = () => {
       urgentTasksError: null,
       overdueTasksError: null,
       performanceError: null,
+      leavesError: null,
+      attendanceError: null,
     }));
   }, []);
 
@@ -382,6 +451,8 @@ export const useManager = () => {
     urgentTasks: state.urgentTasks,
     overdueTasks: state.overdueTasks,
     teamPerformance: state.teamPerformance,
+    teamLeaves: state.teamLeaves,
+    teamAttendance: state.teamAttendance,
 
     // Loading states
     isLoading,
@@ -390,6 +461,8 @@ export const useManager = () => {
     isLoadingUrgentTasks: state.isLoadingUrgentTasks,
     isLoadingOverdueTasks: state.isLoadingOverdueTasks,
     isLoadingPerformance: state.isLoadingPerformance,
+    isLoadingLeaves: state.isLoadingLeaves,
+    isLoadingAttendance: state.isLoadingAttendance,
 
     // Error states
     error: state.error,
@@ -398,6 +471,8 @@ export const useManager = () => {
     urgentTasksError: state.urgentTasksError,
     overdueTasksError: state.overdueTasksError,
     performanceError: state.performanceError,
+    leavesError: state.leavesError,
+    attendanceError: state.attendanceError,
 
     // Actions
     fetchDashboard,
@@ -406,6 +481,8 @@ export const useManager = () => {
     fetchOverdueTasks,
     fetchTeamPerformance,
     fetchMemberTasks,
+    fetchTeamLeaves,
+    fetchTeamAttendance,
     refreshData,
     clearErrors,
   };

@@ -59,10 +59,10 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
     e.preventDefault();
     // Get the current user's role for task assignment tracking
     const currentUserRole = mockUsers.find(u => u.id === currentUserId)?.role;
-    
+
     // Find the assigned user to determine their manager
     const assignedUser = mockUsers.find(u => u.id === formData.assignedTo);
-    
+
     onAdd({
       title: formData.title,
       description: formData.description,
@@ -126,7 +126,7 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
   };
 
   const availableUsers = mockUsers.filter(user => user.isActive);
-  const selectedDeptUsers = formData.departmentId 
+  const selectedDeptUsers = formData.departmentId
     ? availableUsers.filter(user => user.departmentId === formData.departmentId)
     : availableUsers;
 
@@ -150,7 +150,7 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea
@@ -238,8 +238,8 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
               <CardContent className="space-y-4">
                 <div className="space-y-3">
                   <Label>Meeting Type</Label>
-                  <RadioGroup 
-                    value={meetingData.type} 
+                  <RadioGroup
+                    value={meetingData.type}
                     onValueChange={(value: 'department' | 'user') => setMeetingData({ ...meetingData, type: value })}
                     className="flex gap-6"
                   >
@@ -271,8 +271,8 @@ export default function AddTaskDialog({ open, onClose, onAdd, currentUserId }: A
                             onCheckedChange={() => handleDepartmentToggle(dept.id)}
                           />
                           <Label className="flex items-center gap-2 text-sm">
-                            <div 
-                              className="w-3 h-3 rounded-full" 
+                            <div
+                              className="w-3 h-3 rounded-full"
                               style={{ backgroundColor: dept.color }}
                             />
                             {dept.name}
