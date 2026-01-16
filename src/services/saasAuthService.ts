@@ -219,11 +219,17 @@ class SaaSAuthService {
     const token = this.getAccessToken();
 
     // Ensure we use the full URL including backend base
-    const fullUrl = url.startsWith('http') ? url : `${this.baseURL}${url}`;
+    // FIX: Always prepend baseURL for relative paths
+    let fullUrl = url;
+    if (!url.startsWith('http')) {
+      fullUrl = `${this.baseURL}${url}`;
+    }
 
-    console.log('🔍 SaaS Authenticated Fetch - URL:', fullUrl);
+    // Debug log the actual full URL being called
+    console.log('🔍 SaaS Authenticated Fetch - baseURL:', this.baseURL);
+    console.log('🔍 SaaS Authenticated Fetch - input url:', url);
+    console.log('🔍 SaaS Authenticated Fetch - fullUrl:', fullUrl);
     console.log('🔍 SaaS Authenticated Fetch - Token available:', !!token);
-    console.log('🔍 SaaS Authenticated Fetch - Token preview:', token?.substring(0, 20) + '...');
 
     if (!token) {
       throw new Error('No SaaS access token available');
@@ -234,8 +240,6 @@ class SaaSAuthService {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
-
-    console.log('🔍 SaaS Authenticated Fetch - Headers:', { ...headers, 'Authorization': `Bearer ${token.substring(0, 20)}...` });
 
     const response = await fetch(fullUrl, {
       ...options,
