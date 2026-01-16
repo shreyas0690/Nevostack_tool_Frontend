@@ -34,7 +34,24 @@ interface SaaSLoginResponse {
 }
 
 class SaaSAuthService {
-  private baseURL = API_CONFIG.BASE_URL;
+  private _baseURL: string;
+
+  constructor() {
+    const configUrl = API_CONFIG.BASE_URL;
+    // Safety check: specific fix for Vercel deployment issues
+    // If the URL is relative or empty, force the production backend
+    if (!configUrl || configUrl.startsWith('/')) {
+      console.warn('⚠️ Invalid API_CONFIG.BASE_URL detected:', configUrl, '- Forcing production backend URL');
+      this._baseURL = 'https://nevostack-tool-backend-c717.vercel.app';
+    } else {
+      this._baseURL = configUrl;
+    }
+    console.log('🔒 SaaSAuthService initialized with Base URL:', this._baseURL);
+  }
+
+  get baseURL(): string {
+    return this._baseURL;
+  }
 
   // SaaS Admin Login
   async login(credentials: SaaSLoginCredentials): Promise<SaaSLoginResponse> {
