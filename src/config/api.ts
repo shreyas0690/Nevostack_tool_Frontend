@@ -1,7 +1,20 @@
 // API Configuration
 export const API_CONFIG = {
   // Base URL for the backend API
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000' : 'https://api.nevostack.com'),
+  BASE_URL: (() => {
+    // 1. Prefer Environment Variable if available
+    if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+
+    // 2. Check if running on localhost
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    if (isLocalhost) return 'http://localhost:5000';
+
+    // 3. Fallback to production URL (hardcoded to ensure it works on Vercel)
+    return 'https://nevostack-tool-backend-c717.vercel.app';
+  })(),
 
   // API Endpoints
   ENDPOINTS: {
