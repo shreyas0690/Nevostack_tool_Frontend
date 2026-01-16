@@ -3,8 +3,9 @@ export const API_CONFIG = {
   // Base URL for the backend API
   // Base URL for the backend API
   BASE_URL: (() => {
-    // Version Check
-    console.log('🚀 App Version: 1.0.2 - Vercel URL Fix with Debug Logs');
+    // Version Check - UPDATED FOR DEBUG
+    console.log('🚀🚀🚀 App Version: 1.0.3 - DEBUG BUILD');
+    console.log('🔧 import.meta.env.VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
 
     // 1. Prefer Environment Variable if available
     if (import.meta.env.VITE_API_BASE_URL) {
